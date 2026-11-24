@@ -171,3 +171,44 @@ test('Suricata: a bad rebuild changes nothing, and a failed load is put back', a
   await x.s.apply([{ id: 'a', kind: 'rule.disable', sid: 1, label: 'x' }])
   assert.deepEqual(x.on(), [2])
 })
+
+test('Suricata: a new download is applied once, keeps choices, and a bad one is put back', async () => {
+  const x = sensor()
+  const root = join(x.p.own, '..')
+  const p = { ...x.p, incoming: join(root, 'in'), cache: join(root, 'cache') }
+  mkdirSync(p.incoming)
+  mkdirSync(p.cache)
+  const cached = join(p.cache, `${'a'.repeat(32)}-emerging.rules.tar.gz`)
+  const incoming = join(p.incoming, 'emerging.rules.tar.gz')
+  writeFileSync(cached, 'old')
+  let failed = 0
+  const t = { builds: 0 }
+  const s = suricata(p, {
+    async build(dis, _en, out) {
+      t.builds++
+      const off = readFileSync(dis, 'utf8').split('\n')
+      const n = readFileSync(cached, 'utf8') === 'old' ? [1, 2, 3] : [1, 2, 3, 4]
+      writeFileSync(join(out, 'suricata.rules'), n.map((k) => line(k, !off.includes(String(k)))).join(''))
+    },
+    async reload() { const f = failed; failed = 0; return { loaded: 3, failed: f } },
+  })
+  const run = s.background!.run
+  await run()
+  assert.equal(t.builds, 0)
+  await s.apply([{ id: 'a', kind: 'rule.disable', sid: 1, label: 'x' }])
+  writeFileSync(incoming, 'bad')
+  failed = 2
+  await assert.rejects(run(), /could not load/)
+  assert.equal(readFileSync(cached, 'utf8'), 'old')
+  assert.deepEqual(x.on(), [2, 3])
+  assert.equal((await s.health()).healthy, false)
+  const b = t.builds
+  await run()
+  assert.equal(t.builds, b)
+  writeFileSync(incoming, 'new')
+  await run()
+  assert.deepEqual(x.on(), [2, 3, 4])
+  assert.match((await s.health()).message, /3 rules on; rules updated .* 1 new, 0 gone/)
+  await run()
+  assert.equal(t.builds, b + 1)
+})

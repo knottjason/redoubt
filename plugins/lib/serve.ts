@@ -8,6 +8,10 @@ export type Plugin = {
   /** Make exactly these entries true. Throw if nothing was changed; report per-entry problems in the results. */
   apply(entries: Entry[]): Promise<ApplyReply>
   health(): Promise<{ healthy: boolean; message: string }>
+  /** What is really on the device, when the plugin can look. Otherwise Redoubt is told what was last applied. */
+  present?(): Promise<string[]>
+  /** Work of its own, never at the same time as apply. */
+  background?: { every: number; run(): Promise<void> }
   rules?(r: RulesRequest): Promise<RulesReply>
 }
 type State = { instance: string; revision: number; ids: string[] }
@@ -51,7 +55,7 @@ export function createPlugin(plugin: Plugin, o: { key: string; stateDir: string 
   async function handle(action: string, body: string): Promise<unknown> {
     switch (action) {
       case 'describe': return plugin.describe
-      case 'list': return { instance: state.instance, revision: state.revision, ids: state.ids, ...(await plugin.health()) } satisfies ListReply
+      case 'list': return { instance: state.instance, revision: state.revision, ids: plugin.present ? await plugin.present() : state.ids, ...(await plugin.health()) } satisfies ListReply
       case 'apply': {
         const run = queue.then(() => apply(JSON.parse(body) as ApplyRequest))
         queue = run.catch(() => {})
@@ -60,6 +64,13 @@ export function createPlugin(plugin: Plugin, o: { key: string; stateDir: string 
       case 'rules': if (plugin.rules) return plugin.rules(JSON.parse(body) as RulesRequest)
     }
     throw Object.assign(new Error('Unknown action'), { status: 404 })
+  }
+
+  if (plugin.background) {
+    const { every, run } = plugin.background
+    const go = () => { queue = queue.then(run).catch((e: Error) => console.error('background', e.message)) }
+    setTimeout(go, 5_000).unref()
+    setInterval(go, every).unref()
   }
 
   return createServer((req, res) => {

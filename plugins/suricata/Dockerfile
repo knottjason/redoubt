@@ -9,6 +9,7 @@ COPY package.json ./
 COPY src/shared/plugin.ts ./src/shared/
 COPY plugins/lib ./plugins/lib
 COPY plugins/suricata ./plugins/suricata
+RUN install -d -o suricata -g suricata /incoming
 USER suricata
 EXPOSE 8790
 ENTRYPOINT ["node", "plugins/suricata/main.ts"]

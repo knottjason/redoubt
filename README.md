@@ -21,6 +21,8 @@ Redoubt sends each plugin the full list of what should be true (`apply`), keeps 
 
 The Suricata plugin turns rules on and off and silences a rule for one machine, then reloads rules without restarting the sensor. Start Suricata with `--set threshold-file=/var/lib/suricata/redoubt/threshold.config` and share `/var/lib/suricata` and its control socket with the plugin. It puts back the previous rules if the sensor can't load the new ones.
 
+For daily rule updates, run the same image a second time as `node plugins/suricata/fetch.ts`, with internet access and only a shared folder, and give the plugin that folder as `INCOMING_DIR`. The plugin itself stays offline.
+
     docker build -f plugins/suricata/Dockerfile -t redoubt-suricata .
 
 Apache 2.0.
