@@ -10,6 +10,10 @@ Redoubt has one built-in conversation (the Agent page) and serves the same tools
 - `report_gap` lets any agent note a missing tool or confusing data on the Feedback page.
 - Decisions made by the agent are recorded as `<person> (agent)`; by a remote client as `token:<name>`.
 
+## Untrusted input
+
+Alert payloads, DNS and TLS names, hostnames from DHCP and anything else seen on the wire can be written by whoever sent the traffic, and tools hand them to the model. Treat them as attacker-controlled text: a model can be talked into proposing something by what it reads. That is why every change goes through Redoubt's policy checks and, in the built-in chat, through the person's approval, and why read-write tokens belong only to clients that ask before running tools.
+
 ## Models
 
 Set `AGENT_MODELS` and the matching keys (see `.env.example`). Built on the Vercel AI SDK: Anthropic, OpenAI, Google, xAI, and anything OpenAI-compatible (Ollama, llama.cpp, vLLM, LM Studio) as `local`. Give `@tokens` when a local model runs with a short context.
