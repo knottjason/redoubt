@@ -30,3 +30,21 @@ a { color: #7fb0ff; text-decoration: none; } a:hover { color: #a9c9ff; }
 .named { display: inline-flex; align-items: flex-start; gap: 4px; } .named .pencil { opacity: 0; } .named:hover .pencil, .named .pencil:focus-visible, .named .pencil[aria-expanded="true"] { opacity: 1; }
 @media (hover: none) { .named .pencil { opacity: 0.6; } }
 .count { margin-left: 6px; padding: 0 6px; border-radius: 8px; background: #5a2a2e; color: #ffb3b3; font-size: 11px; font-weight: 600; }
+/* Agent chat */
+.md { line-height: 1.6; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; } .md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md pre, .md blockquote, .md .md-table { margin: 0 0 10px; }
+.md ul, .md ol { padding-left: 22px; } .md li + li { margin-top: 2px; }
+.md h1, .md h2, .md h3, .md h4 { margin: 14px 0 6px; font-size: 14px; font-weight: 600; } .md h1 { font-size: 16px; }
+.md a { color: #7aa8ff; }
+.md .md-code { font-family: var(--mantine-font-family-monospace); font-size: 12px; background: #1b222b; border-radius: 4px; padding: 1px 5px; }
+.md pre { background: #151a20; border: 1px solid #222a33; border-radius: 6px; padding: 10px 12px; overflow-x: auto; font-size: 12px; }
+.md blockquote { border-left: 3px solid #2d3743; padding-left: 12px; color: #9aa4b2; }
+.md .md-table { border: 1px solid #222a33; border-radius: 6px; } .md table.grid td, .md table.grid th { white-space: normal; }
+.md table.grid tr:first-child td { border-top: 1px solid #1d242c; }
+.tools { border: 1px solid #222a33; border-radius: 8px; background: #0f1318; margin: 6px 0 10px; }
+.tool + .tool { border-top: 1px solid #1d242c; }
+.tool-head { all: unset; box-sizing: border-box; display: flex; gap: 8px; align-items: center; width: 100%; padding: 7px 10px; cursor: pointer; font-size: 12.5px; }
+.tool-head:hover { background: #151a20; } .tool-head:focus-visible { outline: 2px solid #4c8dff; outline-offset: -2px; }
+.tool-body { padding: 4px 12px 12px 30px; display: grid; gap: 8px; font-size: 12px; }
+.tool-body pre { margin: 0; white-space: pre-wrap; max-height: 320px; overflow: auto; background: #151a20; border-radius: 6px; padding: 8px 10px; }
