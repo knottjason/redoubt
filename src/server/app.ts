@@ -38,6 +38,12 @@ const api = new Hono<Env>()
     const { sid, src, dst } = c.req.valid('query')
     return c.json(await data.alertDetail(sid, src, dst))
   })
+  .get('/overview', zValidator('query', hours), async (c) => {
+    const active = decisions.active()
+    const o = await data.overview(c.req.valid('query').hours)
+    return c.json({ ...o, alerts: undefined, open: o.alerts.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null })).filter((r) => !r.decision) })
+  })
+  .get('/rules', zValidator('query', hours), async (c) => c.json(await data.rules(c.req.valid('query').hours)))
   .get('/machines', zValidator('query', hours), async (c) => c.json(await data.machines(c.req.valid('query').hours)))
   .get('/machines/:ip', zValidator('param', z.object({ ip })), zValidator('query', hours), async (c) => {
     const active = decisions.active()

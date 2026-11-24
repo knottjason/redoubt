@@ -6,14 +6,14 @@ import { useMachine, useMachines } from '../api.ts'
 import { Bandwidth, Grid, Load, Machine, NewTag, bytes, when } from '../ui.tsx'
 import { alertColumns } from './Alerts.tsx'
 
-const Range = ({ v, set }: { v: string; set: (v: string) => void }) => <SegmentedControl size="xs" value={v} onChange={set} data={[{ value: '1', label: '1 h' }, { value: '24', label: '24 h' }, { value: '168', label: '7 d' }, { value: '720', label: '30 d' }]} />
+export const Range = ({ v, set }: { v: string; set: (v: string) => void }) => <SegmentedControl size="xs" value={v} onChange={set} data={[{ value: '1', label: '1 h' }, { value: '24', label: '24 h' }, { value: '168', label: '7 d' }, { value: '720', label: '30 d' }]} />
 const num = (f: (n: number) => string = String) => (c: { getValue: () => any }) => <span className="mono">{f(c.getValue())}</span>
 
 type Row = NonNullable<ReturnType<typeof useMachines>['data']>[number]
 const columns: ColumnDef<Row, any>[] = [
   { id: 'name', accessorFn: (r) => r.name || r.ip, header: 'Machine', cell: ({ row: { original: r } }) => <Machine ip={r.ip} name={r.name} /> },
   { accessorKey: 'down', header: 'Down', meta: { right: true }, cell: num(bytes) }, { accessorKey: 'up', header: 'Up', meta: { right: true }, cell: num(bytes) },
-  { accessorKey: 'connections', header: 'Connections', meta: { right: true }, cell: num() }, { accessorKey: 'destinations', header: 'Destinations', meta: { right: true }, cell: num() },
+  { accessorKey: 'connections', header: 'Connections', meta: { right: true }, cell: num() }, { accessorKey: 'destinations', header: 'Peers', meta: { right: true }, cell: num() },
   { accessorKey: 'last', header: 'Last', cell: (c) => <span className="mono dim">{when(c.getValue())}</span> },
 ]
 

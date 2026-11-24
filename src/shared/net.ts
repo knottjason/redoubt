@@ -13,7 +13,8 @@ export function parseNetworks(spec: string): BlockList {
 }
 
 // Never treated as outside, whatever the configuration says.
-const special = parseNetworks('0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,224.0.0.0/3,::/127,fc00::/7,fe80::/10,ff00::/8')
+export const specialNetworks = '0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,172.16.0.0/12,192.168.0.0/16,224.0.0.0/3,::/127,fc00::/7,fe80::/10,ff00::/8'
+const special = parseNetworks(specialNetworks)
 
 export function isInternal(ip: string, own: BlockList): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(ip)

@@ -1,5 +1,5 @@
 import { readFileSync, statSync } from 'node:fs'
-import { parseNetworks } from '../shared/net.ts'
+import { parseNetworks, specialNetworks } from '../shared/net.ts'
 
 const env = process.env
 const need = (k: string) => {
@@ -14,6 +14,8 @@ const name = (k: string, fallback: string) => {
   return v
 }
 
+const internalSpec = env.INTERNAL_NETWORKS ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+
 export const config = {
   // Where this data was seen, and by which collector. A site keeps equal private addresses at two places apart.
   site: name('SITE', 'main'),
@@ -25,7 +27,8 @@ export const config = {
     password: need('CLICKHOUSE_PASSWORD'),
     database: env.CLICKHOUSE_DATABASE ?? 'netmon',
   },
-  internal: parseNetworks(env.INTERNAL_NETWORKS ?? '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'),
+  internal: parseNetworks(internalSpec),
+  internalList: `${internalSpec},${specialNetworks}`.split(',').map((n) => n.trim()).filter(Boolean),
   dataDir: env.DATA_DIR ?? './data',
   hostsFile: env.HOSTS_FILE ?? './hosts.json',
   trustedProxies: parseNetworks(env.TRUSTED_PROXIES ?? ''),

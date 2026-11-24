@@ -11,9 +11,9 @@ import { useSummary } from './api.ts'
 import { Alerts } from './pages/Alerts.tsx'
 import { History } from './pages/History.tsx'
 import { MachinePage, Machines } from './pages/Machines.tsx'
+import { Overview } from './pages/Overview.tsx'
+import { Rules } from './pages/Rules.tsx'
 import { theme } from './theme.ts'
-
-const Soon = ({ what }: { what: string }) => <div className="page dim">{what} is not built yet.</div>
 
 function Shell() {
   const s = useSummary().data
@@ -25,9 +25,9 @@ function Shell() {
       {s && <span className="dim"><span className="dot" style={{ background: s.sensorOk ? (s.drops ? '#f5a524' : '#3ccf8e') : '#ff6b6b' }} />{s.sensorOk ? <>Sensor OK · <span className="mono">{s.drops}</span> drops in 10 min</> : 'Sensor is silent'} · {s.user}</span>}
     </header>
     <Routes>
-      <Route path="/" element={<Navigate to="/alerts" replace />} />
+      <Route path="/" element={<Navigate to="/overview" replace />} />
       <Route path="/alerts" element={<Alerts />} /><Route path="/machines" element={<Machines />} /><Route path="/machines/:ip" element={<MachinePage />} />
-      <Route path="/history" element={<History />} /><Route path="/overview" element={<Soon what="Overview" />} /><Route path="/rules" element={<Soon what="Rules" />} />
+      <Route path="/history" element={<History />} /><Route path="/overview" element={<Overview />} /><Route path="/rules" element={<Rules />} />
       <Route path="*" element={<div className="page">No such page.</div>} />
     </Routes>
   </>

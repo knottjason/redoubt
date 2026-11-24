@@ -1,6 +1,7 @@
 import { Button, Group, SegmentedControl, TextInput } from '@mantine/core'
 import type { ColumnDef } from '@tanstack/react-table'
 import { useState } from 'react'
+import { useSearchParams } from 'react-router'
 import { type Alert, useAlerts } from '../api.ts'
 import { Detail } from '../Detail.tsx'
 import { Grid, Load, Machine, NewTag, Sev, Status, when } from '../ui.tsx'
@@ -21,7 +22,7 @@ const filters = { Open: (a: Alert) => !a.decision, Allowed: (a: Alert) => a.deci
 export function Alerts() {
   const [hours, setHours] = useState('24')
   const [filter, setFilter] = useState<keyof typeof filters>('Open')
-  const [find, setFind] = useState('')
+  const [find, setFind] = useState(useSearchParams()[0].get('find') ?? '')
   const [sel, setSel] = useState<string>()
   const q = useAlerts(Number(hours))
   const all = q.data ?? []

@@ -3,7 +3,7 @@ import { isInternal, orient } from '../shared/net.ts'
 import { config, hostName } from './config.ts'
 
 const ch = createClient({ ...config.clickhouse, request_timeout: 30_000 })
-type Params = Record<string, string | number>
+type Params = Record<string, string | number | string[]>
 async function q<T>(query: string, query_params: Params = {}): Promise<T[]> {
   const r = await ch.query({ query, query_params, format: 'JSONEachRow' })
   return (await r.json()) as T[]
@@ -64,19 +64,51 @@ export async function alertDetail(sid: number, src: string, dst: string) {
   }
 }
 
-async function bandwidthOf(ip: string, hours: number) {
+// A connection's bytes are spread evenly over its life; putting them all where it ended would draw spikes that never happened.
+async function bandwidth(up: string, down: string, where: string, hours: number, params: Params) {
   const step = hours <= 24 ? 900 : hours <= 168 ? 3600 : 14400
-  return (await q<{ t: string; down: string; up: string }>(`SELECT ${iso('toStartOfInterval(f.ts, toIntervalSecond({step:UInt32}))')} AS t,
-      sum(if(src = {ip:String}, bytes_in, bytes_out)) AS down, sum(if(src = {ip:String}, bytes_out, bytes_in)) AS up
-    FROM flows f WHERE (src = {ip:String} OR dst = {ip:String}) AND f.ts > now() - toIntervalHour({hours:UInt32}) GROUP BY t ORDER BY t`, { ip, hours, step }))
-    .map((r) => ({ t: r.t, down: Number(r.down), up: Number(r.up) }))
+  return (await q<{ t: string; down: number; up: number }>(`SELECT ${iso('toDateTime(b * {step:UInt32})')} AS t, sum(d * part) AS down, sum(u * part) AS up FROM (
+      SELECT d, u, arrayJoin(range(intDiv(greatest(s, since), {step:UInt32}), intDiv(e, {step:UInt32}) + 1)) AS b,
+        if(e = s, 1, greatest(0, least(e, (b + 1) * {step:UInt32}) - greatest(s, b * {step:UInt32})) / (e - s)) AS part
+      FROM (SELECT toInt64(toUnixTimestamp(f.start)) AS s, greatest(s, toInt64(toUnixTimestamp(f.end))) AS e,
+          toInt64(toUnixTimestamp(now())) - {hours:UInt32} * 3600 AS since, ${down} AS d, ${up} AS u
+        FROM flows f WHERE ${where} AND f.ts > now() - toIntervalHour({hours:UInt32}))
+      WHERE e >= since) GROUP BY b ORDER BY b`, { ...params, hours, step }))
+    .map((r) => ({ t: r.t, down: Math.round(Number(r.down)), up: Math.round(Number(r.up)) }))
+}
+const bandwidthOf = (ip: string, hours: number) =>
+  bandwidth('if(src = {ip:String}, bytes_out, bytes_in)', 'if(src = {ip:String}, bytes_in, bytes_out)', '(src = {ip:String} OR dst = {ip:String})', hours, { ip })
+
+const inside = (c: string) => `arrayExists(n -> isIPAddressInRange(${c}, n), {nets:Array(String)})`
+
+export async function overview(hours: number) {
+  const nets = config.internalList
+  const [internet, top, rows, [last]] = await Promise.all([
+    bandwidth(`if(${inside('src')}, bytes_out, bytes_in)`, `if(${inside('src')}, bytes_in, bytes_out)`, `${inside('src')} != ${inside('dst')}`, hours, { nets }),
+    machines(hours),
+    alerts(hours),
+    q<{ age: string }>(`SELECT dateDiff('second', max(f.ts), now64(3)) AS age FROM flows f WHERE f.ts > now() - INTERVAL 1 DAY`),
+  ])
+  return {
+    internet, top: top.slice(0, 8), alerts: rows,
+    sources: [{ site: config.site, source: config.source, secondsAgo: Math.max(0, Number(last?.age ?? 0)) }],
+  }
+}
+
+export async function rules(hours: number) {
+  const rows = await q<{ sid: number; signature: string; category: string; severity: number; hits: string; pairs: string; last: string }>(
+    `SELECT sid, any(a.signature) AS signature, any(a.category) AS category, min(a.severity) AS severity, count() AS hits, uniq(src, dst) AS pairs, ${iso('max(ts)')} AS last
+     FROM alerts a WHERE ts > now() - toIntervalHour({hours:UInt32}) GROUP BY sid ORDER BY hits DESC LIMIT 1000`, { hours })
+  return rows.map((r) => ({ ...r, hits: Number(r.hits), pairs: Number(r.pairs) }))
 }
 
 export async function machines(hours: number) {
   const rows = await q<{ ip: string; up: string; down: string; conns: string; dests: string; last: string }>(
-    `SELECT src AS ip, sum(bytes_out) AS up, sum(bytes_in) AS down, count() AS conns, uniq(dst) AS dests, ${iso('max(f.ts)')} AS last
-     FROM flows f WHERE f.ts > now() - toIntervalHour({hours:UInt32}) GROUP BY src ORDER BY up + down DESC LIMIT 1000`, { hours })
-  return rows.filter((r) => isInternal(r.ip, config.internal)).map((r) => ({
+    `SELECT ip, sum(u) AS up, sum(d) AS down, count() AS conns, uniq(other) AS dests, ${iso('max(t)')} AS last FROM (
+       SELECT src AS ip, dst AS other, bytes_out AS u, bytes_in AS d, f.ts AS t FROM flows f WHERE f.ts > now() - toIntervalHour({hours:UInt32})
+       UNION ALL SELECT dst, src, bytes_in, bytes_out, f.ts FROM flows f WHERE f.ts > now() - toIntervalHour({hours:UInt32}))
+     WHERE ${inside('ip')} GROUP BY ip ORDER BY up + down DESC LIMIT 1000`, { hours, nets: config.internalList })
+  return rows.map((r) => ({
     site: config.site, ip: r.ip, name: hostName(r.ip), up: Number(r.up), down: Number(r.down), connections: Number(r.conns), destinations: Number(r.dests), last: r.last,
   }))
 }

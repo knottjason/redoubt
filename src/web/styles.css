@@ -9,10 +9,12 @@ body { background: #0b0e12; font-size: 13px; }
 .top nav a { padding: 6px 12px; border-radius: 6px; color: #9aa4b2; text-decoration: none; }
 .top nav a.active { color: #e6e9ee; background: #1b222b; }
 .brand { font-weight: 700; font-size: 15px; display: flex; gap: 8px; align-items: center; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; } .tiles b { display: block; font: 500 22px var(--mantine-font-family-monospace); }
 .split { display: grid; grid-template-columns: minmax(0, 1fr) 400px; }
 .split > main, .page { padding: 20px; min-width: 0; }
 .split > aside { border-left: 1px solid #222a33; background: #0f1318; padding: 20px; min-width: 0; }
-@media (max-width: 1000px) { .split { grid-template-columns: minmax(0, 1fr); } .split > aside { border-left: 0; border-top: 1px solid #222a33; } }
+@media (max-width: 1000px) { .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; } .tiles b { display: block; font: 500 22px var(--mantine-font-family-monospace); }
+.split { grid-template-columns: minmax(0, 1fr); } .split > aside { border-left: 0; border-top: 1px solid #222a33; } }
 .scroll { overflow-x: auto; }
 table.grid { width: 100%; border-collapse: collapse; }
 table.grid th { text-align: left; font-weight: 500; padding: 9px 12px; color: #9aa4b2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }

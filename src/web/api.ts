@@ -25,6 +25,10 @@ export const useMachines = (hours: number) =>
   useQuery({ queryKey: ['machines', hours], queryFn: () => unwrap(client.machines.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
 export const useMachine = (ip: string, hours: number) =>
   useQuery({ queryKey: ['machine', ip, hours], queryFn: () => unwrap(client.machines[':ip'].$get({ param: { ip }, query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
+export const useOverview = (hours: number) =>
+  useQuery({ queryKey: ['overview', hours], queryFn: () => unwrap(client.overview.$get({ query: { hours: String(hours) } })), refetchInterval: 30_000, placeholderData: keepPreviousData })
+export const useRules = (hours: number) =>
+  useQuery({ queryKey: ['rules', hours], queryFn: () => unwrap(client.rules.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
 export const useHistory = () => useQuery({ queryKey: ['decisions'], queryFn: () => unwrap(client.decisions.$get()) })
 
 export type Alert = NonNullable<ReturnType<typeof useAlerts>['data']>[number]
