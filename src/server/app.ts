@@ -10,6 +10,11 @@ import { decisionFor, openDecisions } from './decisions.ts'
 import { createService, ruleActions } from './decide.ts'
 import { openPlugins } from './plugins.ts'
 import { openDevices, shown } from './devices.ts'
+import { openAgent } from './agent.ts'
+import { agentApi, mcpHttp } from './agent-routes.ts'
+import { openAgentStore } from './agent-store.ts'
+import type { Services } from './mcp.ts'
+import { openSql } from './sql.ts'
 
 const decisions = openDecisions(config.dataDir, config.site)
 const plugins = openPlugins(decisions.db)
@@ -86,6 +91,18 @@ export const services = {
   watchNetwork: (cidr: string, on: boolean) => devices.watch(cidr, on),
   plugins: () => plugins.list(),
 }
+// The agent and remote MCP clients get the same functions as the routes, so they can do nothing a button can't.
+const refusedThrows = <T extends object>(r: T): Exclude<T, { error: string }> => { if ('error' in r) throw new Error(String(r.error)); return r as Exclude<T, { error: string }> }
+const sqlLogin = config.agentClickhouse && openSql(config.agentClickhouse)
+const agentServices: Services = {
+  ...services, site: config.site, summary: data.summary, alertDetail: data.alertDetail, rules: data.rules, machines: data.machines,
+  decide: (d, user) => refusedThrows(services.decide({ ...d, site: config.site, user })),
+  setRule: (r, user) => refusedThrows(services.setRule({ ...r, user })),
+  ...(sqlLogin && { sql: sqlLogin.sql, schema: sqlLogin.schema }),
+}
+const agentStore = openAgentStore(config.dataDir)
+const agent = openAgent(process.env, agentServices, agentStore)
+
 const pluginUrl = z.url({ protocol: /^https?$/ }).max(200)
 const pluginKey = z.string().min(32).max(200)
 const ip = z.union([z.ipv4(), z.ipv6()])
@@ -155,6 +172,7 @@ const api = new Hono<Env>()
   .post('/plugins/:id/remove', zValidator('param', z.object({ id: z.coerce.number().int().positive() })), (c) => {
     try { return plugins.remove(c.req.valid('param').id) ? c.json({ ok: true }) : c.json({ error: 'No such plugin' }, 404) } catch (e) { return c.json({ error: (e as Error).message }, 409) }
   })
+  .route('/', agentApi(agent, agentStore))
 
 export const app = new Hono()
   .use(secureHeaders({ contentSecurityPolicy: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'"], imgSrc: ["'self'", 'data:'], frameAncestors: ["'none'"] } }))
@@ -166,6 +184,8 @@ export const app = new Hono()
     c.header('Cache-Control', 'no-store')
   })
   .route('/api', api)
+  // Signed in by its own tokens, not the proxy: point the proxy's sign-in rules past this path.
+  .route('/mcp', mcpHttp(agentServices, agentStore))
 app.get('/healthz', (c) => c.text('ok'))
 app.onError((e, c) => {
   console.error(e)

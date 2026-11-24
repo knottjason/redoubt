@@ -37,6 +37,13 @@ export const config = {
   authHeader: (env.AUTH_HEADER ?? 'remote-user').toLowerCase(),
   runQueue: env.RUN_QUEUE !== 'false',
   devUser: env.NODE_ENV === 'production' ? '' : (env.DEV_USER ?? ''),
+  // The agent's read-only SQL. A separate login the ClickHouse server holds to readonly=1 with limits; no login, no SQL tool.
+  agentClickhouse: env.CLICKHOUSE_AGENT_USER ? {
+    url: env.CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',
+    username: env.CLICKHOUSE_AGENT_USER,
+    password: need('CLICKHOUSE_AGENT_PASSWORD'),
+    database: env.CLICKHOUSE_DATABASE ?? 'netmon',
+  } : undefined,
 }
 
 let hosts: Record<string, string> = {}
