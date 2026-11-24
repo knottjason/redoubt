@@ -19,6 +19,8 @@ export type Services = {
   history(): unknown[]
   ruleset(q: { find: string; state: 'all' | 'on' | 'off'; offset: number }): Promise<unknown>
   devices(): Promise<unknown>
+  inventory(hours: number): Promise<unknown>
+  renameDevice(target: { id: number } | { ip: string }, name: string): unknown
   plugins(): unknown[]
   /**
    * Records a decision and hands it to the plugins. Throws with a message for the person when policy refuses it.
@@ -35,7 +37,7 @@ export const decideActions = ['allow', 'allow_machine', 'allow_all', 'silence_ma
 type Action = (typeof decideActions)[number]
 
 /** Tools that change something. The built-in chat asks the person before any of these run. */
-export const writeTools = ['decide_alert', 'set_rule', 'undo_decision'] as const
+export const writeTools = ['decide_alert', 'set_rule', 'undo_decision', 'rename_device'] as const
 
 export type Caller = { user: string; scope: Scope }
 
@@ -83,7 +85,9 @@ export function mcpServer(s: Services, gaps: AgentStore['gaps'], who: Caller): M
     safe(async ({ hours, limit }) => (await s.machines(hours)).slice(0, limit)))
   t('get_machine', { description: 'One machine: bandwidth, biggest connections with names and first-seen, destinations first seen in the last day, and its alerts.', inputSchema: { ip, hours }, annotations: ro },
     safe(({ ip, hours }) => s.machine(ip, hours)))
-  t('list_devices', { description: 'What the routers know about devices (DHCP leases, ARP, static DNS), one record per source.', annotations: ro }, safe(() => s.devices()))
+  t('list_devices', { description: 'Every device on the network, merged: MAC, IP and its history, hostname, the name in Redoubt and on the router, DNS names, traffic over these hours, and whether it is new.', inputSchema: { hours }, annotations: ro },
+    safe(({ hours }) => s.inventory(hours)))
+  t('list_device_records', { description: 'The raw records behind list_devices: DHCP leases, ARP and static DNS from each router, one per source. For checking where a name or address came from.', annotations: ro }, safe(() => s.devices()))
   t('list_plugins', { description: 'Plugins at this site, what they handle, and whether they are healthy.', annotations: ro }, safe(() => s.plugins()))
   t('list_decisions', { description: 'Decisions made, newest first, with whether each is in place on the devices.', inputSchema: { limit: limit(500) }, annotations: ro },
     safe(({ limit }) => s.history().slice(0, limit)))
@@ -125,5 +129,19 @@ silence_machine / silence_all: stop the rule alerting for this machine / everyon
     inputSchema: { id: z.number().int().positive(), reason: z.string().min(3).max(500) },
     annotations: change,
   }, safe(({ id, reason }) => (s.undo(id, who.user, reason) ? { ok: true } : { ok: false, error: 'Already undone' })))
+  t('rename_device', {
+    description: 'Name a device in Redoubt, by its id from list_devices or its IP address. An empty name clears it. Does not change the router.',
+    inputSchema: {
+      id: z.number().int().positive().optional(), ip: ip.optional(),
+      name: z.string().max(60).regex(/^[^\u0000-\u001f\u007f]*$/),
+      reason: z.string().min(3).max(500).describe('Why this name, shown to the person approving'),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, safe(({ id, ip, name }) => {
+    if ((id === undefined) === (ip === undefined)) throw new Error('Give the device id or its address, not both')
+    const d = s.renameDevice(id !== undefined ? { id } : { ip: ip! }, name)
+    if (!d) throw new Error('No such device here')
+    return d
+  }))
   return server
 }

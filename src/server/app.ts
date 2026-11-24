@@ -107,7 +107,7 @@ async function signatureOf(sid: number): Promise<string> {
   throw new Error(`No rule with sid ${sid} is known to the sensor or seen in alerts`)
 }
 const agentServices: Services = {
-  ...services, site: config.site, summary: data.summary, alertDetail: data.alertDetail, rules: data.rules, machines: data.machines,
+  ...services, renameDevice: (t, name) => services.renameDevice(t, name, false), site: config.site, summary: data.summary, alertDetail: data.alertDetail, rules: data.rules, machines: data.machines,
   decide: async (d, user) => refusedThrows(services.decide({ ...d, signature: await signatureOf(d.sid), site: config.site, user })),
   setRule: async (r, user) => refusedThrows(services.setRule({ ...r, signature: await signatureOf(r.sid), user })),
   ...(sqlLogin && { sql: sqlLogin.sql, schema: sqlLogin.schema }),

@@ -51,7 +51,7 @@ function fakeServices() {
     summary: async () => ({ sensorOk: true }),
     overview: async () => ({}),
     alerts: async () => [{ sid: 1, src: '192.0.2.9', dst: '203.0.113.5', machine: '192.0.2.9', remote: '203.0.113.5', decision: null }, { sid: 2, src: '192.0.2.8', dst: '203.0.113.6', machine: '192.0.2.8', remote: '203.0.113.6', decision: { id: 1 } }],
-    alertDetail: async () => ({}), rules: async () => [], machines: async () => [], machine: async () => ({}), history: () => [], ruleset: async () => ({}), devices: async () => ({}), plugins: () => [],
+    alertDetail: async () => ({}), rules: async () => [], machines: async () => [], machine: async () => ({}), history: () => [], ruleset: async () => ({}), devices: async () => ({}), inventory: async () => ({ devices: [] }), renameDevice: (t) => ('ip' in t && t.ip === '192.0.2.9' ? { id: 1, name: 'printer' } : null), plugins: () => [],
     decide: async (d, user) => {
       if (d.action === 'block' && d.dst.startsWith('192.0.2.')) throw new Error('Internal addresses are never blocked')
       calls.push({ ...d, user })
@@ -88,6 +88,8 @@ test('MCP: read tokens get no change tools; write tools go through the same deci
   const no = await rw.callTool({ name: 'decide_alert', arguments: { action: 'block', sid: 1, src: '203.0.113.5', dst: '192.0.2.9', reason: 'Try internal' } })
   assert.equal(no.isError, true)
   assert.match((no.content as { text: string }[])[0]!.text, /never blocked/)
+  assert.equal((await rw.callTool({ name: 'rename_device', arguments: { ip: '192.0.2.9', name: 'printer', reason: 'Its DHCP hostname' } })).isError, undefined)
+  assert.equal((await rw.callTool({ name: 'rename_device', arguments: { ip: '192.0.2.77', name: 'x', reason: 'Unknown one' } })).isError, true)
 })
 
 test('remote MCP needs a valid token', async () => {

@@ -20,6 +20,7 @@ function describe(p: Part): { what: string; detail: string } {
     case 'decide_alert': return { what: said[i.action] ?? i.action, detail: `${i.src} → ${i.dst} · sid ${i.sid} ${i.signature ?? ''}` }
     case 'set_rule': return { what: i.on ? 'Turn rule on' : i.machine ? 'Turn rule off for one machine' : 'Turn rule off', detail: `sid ${i.sid} ${i.signature ?? ''}${i.machine ? ` · ${i.machine}` : ''}` }
     case 'undo_decision': return { what: 'Undo decision', detail: `#${i.id}` }
+    case 'rename_device': return { what: i.name ? `Name it "${i.name}"` : 'Clear its name', detail: i.ip ?? `device #${i.id}` }
     default: return { what: toolName(p), detail: JSON.stringify(i) }
   }
 }
