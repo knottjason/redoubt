@@ -94,10 +94,22 @@ export const services = {
 // The agent and remote MCP clients get the same functions as the routes, so they can do nothing a button can't.
 const refusedThrows = <T extends object>(r: T): Exclude<T, { error: string }> => { if ('error' in r) throw new Error(String(r.error)); return r as Exclude<T, { error: string }> }
 const sqlLogin = config.agentClickhouse && openSql(config.agentClickhouse)
+// The rule's name always comes from the sensor or the alerts, never from what a model typed.
+async function signatureOf(sid: number): Promise<string> {
+  try {
+    const hit = (await services.ruleset({ find: String(sid), state: 'all', offset: 0 }))?.rows.find((r) => r.sid === sid)
+    if (hit) return hit.msg
+  } catch {
+    // No rules plugin, or it is down: the alerts still know the name.
+  }
+  const seen = await data.signatureOf(sid)
+  if (seen) return seen
+  throw new Error(`No rule with sid ${sid} is known to the sensor or seen in alerts`)
+}
 const agentServices: Services = {
   ...services, site: config.site, summary: data.summary, alertDetail: data.alertDetail, rules: data.rules, machines: data.machines,
-  decide: (d, user) => refusedThrows(services.decide({ ...d, site: config.site, user })),
-  setRule: (r, user) => refusedThrows(services.setRule({ ...r, user })),
+  decide: async (d, user) => refusedThrows(services.decide({ ...d, signature: await signatureOf(d.sid), site: config.site, user })),
+  setRule: async (r, user) => refusedThrows(services.setRule({ ...r, signature: await signatureOf(r.sid), user })),
   ...(sqlLogin && { sql: sqlLogin.sql, schema: sqlLogin.schema }),
 }
 const agentStore = openAgentStore(config.dataDir)

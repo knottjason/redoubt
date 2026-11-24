@@ -20,10 +20,13 @@ export type Services = {
   ruleset(q: { find: string; state: 'all' | 'on' | 'off'; offset: number }): Promise<unknown>
   devices(): Promise<unknown>
   plugins(): unknown[]
-  /** Records a decision and hands it to the plugins. Throws with a message for the person when policy refuses it. */
-  decide(d: { action: Action; sid: number; src: string; dst: string; signature: string }, user: string): { id: number; enforced: boolean }
-  setRule(r: { sid: number; on: boolean; machine?: string; signature: string }, user: string): { id: number; enforced: boolean }
-  undo(id: number, user: string): boolean
+  /**
+   * Records a decision and hands it to the plugins. Throws with a message for the person when policy refuses it.
+   * The rule's name is looked up by Redoubt from the sid, never taken from the model.
+   */
+  decide(d: { action: Action; sid: number; src: string; dst: string; reason: string }, user: string): Promise<{ id: number; enforced: boolean }>
+  setRule(r: { sid: number; on: boolean; machine?: string | undefined; reason: string }, user: string): Promise<{ id: number; enforced: boolean }>
+  undo(id: number, user: string, reason: string): boolean
   /** Read-only SQL, when a read-only ClickHouse login is configured. */
   sql?: (query: string) => Promise<{ rows: unknown[]; truncated: boolean }>
   schema?: () => Promise<unknown>
@@ -105,23 +108,22 @@ export function mcpServer(s: Services, gaps: AgentStore['gaps'], who: Caller): M
 silence_machine / silence_all: stop the rule alerting for this machine / everyone (changes the sensor). block: block the remote address (outgoing: for this machine only; incoming: for everyone). Internal addresses can't be blocked.`,
     inputSchema: {
       action: z.enum(decideActions), sid: z.number().int().positive(), src: ip, dst: ip,
-      signature: z.string().min(1).max(300).describe('The alert\'s signature text, from list_alerts'),
       reason: z.string().min(3).max(500).describe('Why, in one or two sentences, shown to the person approving'),
     },
     annotations: change,
-  }, safe(({ reason: _r, ...d }) => s.decide(d, who.user)))
+  }, safe((d) => s.decide(d, who.user)))
   t('set_rule', {
     description: 'Turn a Suricata rule on or off for everyone, or off for one internal machine.',
     inputSchema: {
       sid: z.number().int().positive(), on: z.boolean(), machine: ip.optional().describe('Turn off for this machine only'),
-      signature: z.string().min(1).max(300), reason: z.string().min(3).max(500),
+      reason: z.string().min(3).max(500).describe('Why, in one or two sentences, shown to the person approving'),
     },
     annotations: change,
-  }, safe(({ reason: _r, ...r }) => s.setRule(r, who.user)))
+  }, safe((r) => s.setRule(r, who.user)))
   t('undo_decision', {
     description: 'Undo a decision by id (from list_decisions), removing anything it put on the devices.',
     inputSchema: { id: z.number().int().positive(), reason: z.string().min(3).max(500) },
     annotations: change,
-  }, safe(({ id }) => (s.undo(id, who.user) ? { ok: true } : { ok: false, error: 'Already undone' })))
+  }, safe(({ id, reason }) => (s.undo(id, who.user, reason) ? { ok: true } : { ok: false, error: 'Already undone' })))
   return server
 }

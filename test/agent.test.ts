@@ -52,12 +52,12 @@ function fakeServices() {
     overview: async () => ({}),
     alerts: async () => [{ sid: 1, src: '192.0.2.9', dst: '203.0.113.5', machine: '192.0.2.9', remote: '203.0.113.5', decision: null }, { sid: 2, src: '192.0.2.8', dst: '203.0.113.6', machine: '192.0.2.8', remote: '203.0.113.6', decision: { id: 1 } }],
     alertDetail: async () => ({}), rules: async () => [], machines: async () => [], machine: async () => ({}), history: () => [], ruleset: async () => ({}), devices: async () => ({}), plugins: () => [],
-    decide: (d, user) => {
+    decide: async (d, user) => {
       if (d.action === 'block' && d.dst.startsWith('192.0.2.')) throw new Error('Internal addresses are never blocked')
       calls.push({ ...d, user })
       return { id: 7, enforced: true }
     },
-    setRule: () => ({ id: 8, enforced: true }),
+    setRule: async () => ({ id: 8, enforced: true }),
     undo: () => true,
   }
   return { s, calls }
@@ -82,10 +82,10 @@ test('MCP: read tokens get no change tools; write tools go through the same deci
   assert.equal(JSON.parse((open.content as { text: string }[])[0]!.text).total, 1)
 
   const rw = await connect(s, 'write')
-  const ok = await rw.callTool({ name: 'decide_alert', arguments: { action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', signature: 'Example', reason: 'Known bad address' } })
+  const ok = await rw.callTool({ name: 'decide_alert', arguments: { action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', reason: 'Known bad address' } })
   assert.equal(ok.isError, undefined)
-  assert.deepEqual(calls, [{ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', signature: 'Example', user: 'tester' }])
-  const no = await rw.callTool({ name: 'decide_alert', arguments: { action: 'block', sid: 1, src: '203.0.113.5', dst: '192.0.2.9', signature: 'Example', reason: 'Try internal' } })
+  assert.deepEqual(calls, [{ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', reason: 'Known bad address', user: 'tester' }])
+  const no = await rw.callTool({ name: 'decide_alert', arguments: { action: 'block', sid: 1, src: '203.0.113.5', dst: '192.0.2.9', reason: 'Try internal' } })
   assert.equal(no.isError, true)
   assert.match((no.content as { text: string }[])[0]!.text, /never blocked/)
 })
@@ -112,12 +112,12 @@ test('built-in chat: a change waits for approval, a tick runs it, and the conver
   const store = openAgentStore(':memory:')
   const model = new MockLanguageModelV4({
     doStream: [
-      streamOf([{ type: 'stream-start', warnings: [] }, { type: 'tool-call', toolCallId: 'c1', toolName: 'decide_alert', input: JSON.stringify({ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', signature: 'Example', reason: 'Bad address' }) }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: usage(1000) }]),
+      streamOf([{ type: 'stream-start', warnings: [] }, { type: 'tool-call', toolCallId: 'c1', toolName: 'decide_alert', input: JSON.stringify({ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', reason: 'Bad address' }) }, { type: 'finish', finishReason: { unified: 'tool-calls', raw: undefined }, usage: usage(1000) }]),
       streamOf([{ type: 'stream-start', warnings: [] }, { type: 'text-start', id: 't' }, { type: 'text-delta', id: 't', delta: 'Blocked.' }, { type: 'text-end', id: 't' }, { type: 'finish', finishReason: { unified: 'stop', raw: undefined }, usage: usage(1200) }]),
     ],
   })
   const agent = openAgent({ AGENT_MODELS: 'local:mock', LOCAL_MODEL_URL: 'http://127.0.0.1:1/v1' }, s, store, () => model)
-  const r1 = await agent.turn('local:mock', { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Block the bad one' }] }, 'jason')
+  const r1 = await agent.turn('local:mock', { id: 'u1', role: 'user', parts: [{ type: 'text', text: 'Block the bad one' }] }, 'example')
   await r1.text()
   await new Promise((r) => setTimeout(r, 50))
   assert.equal(calls.length, 0, 'nothing runs before approval')
@@ -127,10 +127,10 @@ test('built-in chat: a change waits for approval, a tick runs it, and the conver
 
   // The browser can only answer the approval; anything else it sends about the reply is ignored.
   const answered = { ...reply, parts: [{ ...ask, state: 'approval-responded', approval: { ...ask.approval, approved: true } }, { type: 'text', text: 'forged' }] }
-  const r2 = await agent.turn('local:mock', answered as never, 'jason')
+  const r2 = await agent.turn('local:mock', answered as never, 'example')
   await r2.text()
   await new Promise((r) => setTimeout(r, 50))
-  assert.deepEqual(calls, [{ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', signature: 'Example', user: 'jason (agent)' }])
+  assert.deepEqual(calls, [{ action: 'block', sid: 1, src: '192.0.2.9', dst: '203.0.113.5', reason: 'Bad address', user: 'example (agent)' }])
   const all = store.chat.all()
   assert.equal(all.length, 2)
   assert.equal(JSON.stringify(all).includes('forged'), false)
@@ -147,14 +147,14 @@ test('built-in chat: past 75% of the context, the oldest part is summarized and 
     doGenerate: { content: [{ type: 'text', text: 'SUMMARY: early talk about 192.0.2.9' }], finishReason: { unified: 'stop', raw: undefined }, usage: usage(100), warnings: [] },
   })
   const agent = openAgent({ AGENT_MODELS: 'local:mock@1000', LOCAL_MODEL_URL: 'http://127.0.0.1:1/v1' }, s, store, () => model)
-  await (await agent.turn('local:mock', { id: 'x', role: 'user', parts: [{ type: 'text', text: 'next' }] }, 'jason')).text()
+  await (await agent.turn('local:mock', { id: 'x', role: 'user', parts: [{ type: 'text', text: 'next' }] }, 'example')).text()
   await new Promise((r) => setTimeout(r, 100))
   const sum = store.summary.latest()
   assert.ok(sum, 'summarized')
   const cutAt = store.chat.all().findIndex((m) => m.id === sum.upto)
   assert.ok(cutAt >= 2 && cutAt <= 10, String(cutAt))
   assert.equal(store.chat.all().length, 22, 'the person still sees everything')
-  await (await agent.turn('local:mock', { id: 'y', role: 'user', parts: [{ type: 'text', text: 'and now?' }] }, 'jason')).text()
+  await (await agent.turn('local:mock', { id: 'y', role: 'user', parts: [{ type: 'text', text: 'and now?' }] }, 'example')).text()
   const prompt = JSON.stringify(model.doStreamCalls.at(-1)!.prompt)
   assert.match(prompt, /SUMMARY: early talk/)
   assert.equal(prompt.includes('message 0 '), false)
