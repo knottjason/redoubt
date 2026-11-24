@@ -75,6 +75,7 @@ export function openPlugins(db: DatabaseSync) {
       }
       db.prepare("UPDATE plugins SET dirty = (revision != ?), tries = 0, next_try = 0, last_ok = ?, error = '' WHERE id = ?").run(p.revision, now(), p.id)
       db.exec('COMMIT')
+      await check({ ...p, dirty: 1 })
     } catch (e) {
       if (db.isTransaction) db.exec('ROLLBACK')
       const wait = Math.min(300_000, 2_000 * 2 ** p.tries)

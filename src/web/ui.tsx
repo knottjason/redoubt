@@ -36,7 +36,7 @@ const appliedText = { requested: 'Requested', active: 'Active', failed: 'Failed'
 export function Applied({ d }: { d: { applied: { state: keyof typeof appliedText; error: string; plugin: string } | null } }) {
   if (!d.applied) return <span className="dim">Recorded only</span>
   const { state, error, plugin } = d.applied
-  return <span title={error} style={{ color: state === 'failed' || error ? '#ff8a8a' : state === 'active' ? '#6fe0ad' : '#f5a524' }}>{appliedText[state]} · {plugin}{error && <div style={{ fontSize: 11 }}>{error}</div>}</span>
+  return <span title={error} style={{ color: state === 'failed' || error ? '#ff8a8a' : state === 'active' ? '#6fe0ad' : '#f5a524' }}>{appliedText[state]} · {plugin}{!error && (state === 'requested' || state === 'removing') && <div className="dim" style={{ fontSize: 11 }}>Working, up to a minute</div>}{error && <div style={{ fontSize: 11 }}>{error}</div>}</span>
 }
 export const NewTag = () => <span style={{ color: '#f5a524', fontWeight: 600, fontSize: 11 }}>NEW</span>
 

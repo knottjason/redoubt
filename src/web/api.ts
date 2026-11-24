@@ -18,7 +18,7 @@ async function unwrap<R extends { ok: boolean; status: number; json(): Promise<u
 
 export const useSummary = () => useQuery({ queryKey: ['summary'], queryFn: () => unwrap(client.summary.$get()), refetchInterval: 30_000 })
 export const useAlerts = (hours: number) =>
-  useQuery({ queryKey: ['alerts', hours], queryFn: () => unwrap(client.alerts.$get({ query: { hours: String(hours) } })), refetchInterval: 15_000, placeholderData: keepPreviousData })
+  useQuery({ queryKey: ['alerts', hours], queryFn: () => unwrap(client.alerts.$get({ query: { hours: String(hours) } })), refetchInterval: (q) => ((q.state.data as { decision: { applied: { state: string } | null } | null }[] | undefined)?.some((a) => ['requested', 'removing'].includes(a.decision?.applied?.state ?? '')) ? 3_000 : 15_000), placeholderData: keepPreviousData })
 export const useDetail = (k: { sid: number; src: string; dst: string } | null) =>
   useQuery({ queryKey: ['detail', k?.sid, k?.src, k?.dst], enabled: !!k, queryFn: () => unwrap(client.alerts.detail.$get({ query: { sid: String(k!.sid), src: k!.src, dst: k!.dst } })) })
 export const useMachines = (hours: number) =>
@@ -30,7 +30,7 @@ export const useOverview = (hours: number) =>
 export const useRules = (hours: number) =>
   useQuery({ queryKey: ['rules', hours], queryFn: () => unwrap(client.rules.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
 export const useRuleset = (find: string, state: 'all' | 'on' | 'off', offset: number) =>
-  useQuery({ queryKey: ['ruleset', find, state, offset], queryFn: () => unwrap(client.ruleset.$get({ query: { find, state, offset: String(offset) } })), refetchInterval: 5_000, placeholderData: keepPreviousData })
+  useQuery({ queryKey: ['ruleset', find, state, offset], queryFn: () => unwrap(client.ruleset.$get({ query: { find, state, offset: String(offset) } })), refetchInterval: 3_000, placeholderData: keepPreviousData })
 export const usePlugins = () => useQuery({ queryKey: ['plugins'], queryFn: () => unwrap(client.plugins.$get()), refetchInterval: 5_000 })
 const json = { headers: { 'content-type': 'application/json' } }
 export function useAct<V>(f: (v: V) => Promise<unknown>) {
@@ -41,7 +41,7 @@ export const useToggleRule = () => useAct((v: { sid: number; on: boolean; signat
 export const useDescribe = () => useMutation({ mutationFn: (v: { url: string; key: string }) => unwrap(client.plugins.describe.$post({ json: v })) })
 export const useAddPlugin = () => useAct((v: { url: string; key: string }) => unwrap(client.plugins.$post({ json: v })))
 export const useRemovePlugin = () => useAct((id: number) => unwrap(client.plugins[':id'].remove.$post({ param: { id: String(id) } }, json)))
-export const useHistory = () => useQuery({ queryKey: ['decisions'], queryFn: () => unwrap(client.decisions.$get()) })
+export const useHistory = () => useQuery({ queryKey: ['decisions'], queryFn: () => unwrap(client.decisions.$get()), refetchInterval: 3_000 })
 
 export type Alert = NonNullable<ReturnType<typeof useAlerts>['data']>[number]
 export type Action = 'allow' | 'silence_machine' | 'silence_all' | 'block'
