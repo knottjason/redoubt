@@ -16,6 +16,9 @@ export type Decision = {
   created: string
   undone: string | null
   undone_by: string | null
+  /** Why, when it was given (the agent always gives one). */
+  reason: string | null
+  undo_reason: string | null
 }
 
 export function openDecisions(dir: string, site: string) {
@@ -34,6 +37,15 @@ export function openDecisions(dir: string, site: string) {
     db.prepare('UPDATE decisions SET site = ?').run(site)
     db.exec('COMMIT')
   }
+  // Reasons came with the agent. Take a copy first and stop if that fails: a half-done migration is worse than none.
+  const cols = db.prepare('PRAGMA table_info(decisions)').all().map((c) => c.name)
+  if (!cols.includes('reason')) {
+    if (dir !== ':memory:') db.exec(`VACUUM INTO '${join(dir, `decisions-before-reasons-${Date.now()}.sqlite`).replaceAll("'", "''")}'`)
+    db.exec('BEGIN')
+    db.exec('ALTER TABLE decisions ADD COLUMN reason TEXT')
+    db.exec('ALTER TABLE decisions ADD COLUMN undo_reason TEXT')
+    db.exec('COMMIT')
+  }
   const now = () => new Date().toISOString()
   const all = (sql: string, ...args: (string | number)[]) => db.prepare(sql).all(...args) as unknown as Decision[]
   return {
@@ -41,13 +53,13 @@ export function openDecisions(dir: string, site: string) {
     active: () => all('SELECT * FROM decisions WHERE undone IS NULL ORDER BY id DESC'),
     get: (id: number) => all('SELECT * FROM decisions WHERE id = ?', id)[0],
     history: () => all('SELECT * FROM decisions ORDER BY id DESC LIMIT 500'),
-    add(d: Pick<Decision, 'site' | 'action' | 'sid' | 'machine' | 'remote' | 'signature' | 'user'>): number {
-      const r = db.prepare('INSERT INTO decisions (site, action, sid, machine, remote, signature, user, created) VALUES (?,?,?,?,?,?,?,?)')
-        .run(d.site, d.action, d.sid, d.machine, d.remote, d.signature, d.user, now())
+    add(d: Pick<Decision, 'site' | 'action' | 'sid' | 'machine' | 'remote' | 'signature' | 'user'> & { reason?: string | undefined }): number {
+      const r = db.prepare('INSERT INTO decisions (site, action, sid, machine, remote, signature, user, created, reason) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(d.site, d.action, d.sid, d.machine, d.remote, d.signature, d.user, now(), d.reason ?? null)
       return Number(r.lastInsertRowid)
     },
-    undo: (id: number, user: string) =>
-      Number(db.prepare('UPDATE decisions SET undone = ?, undone_by = ? WHERE id = ? AND undone IS NULL').run(now(), user, id).changes) > 0,
+    undo: (id: number, user: string, reason?: string) =>
+      Number(db.prepare('UPDATE decisions SET undone = ?, undone_by = ?, undo_reason = ? WHERE id = ? AND undone IS NULL').run(now(), user, reason ?? null, id).changes) > 0,
   }
 }
 

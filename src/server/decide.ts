@@ -29,7 +29,7 @@ export function createService(decisions: ReturnType<typeof openDecisions>, plugi
 
   return {
     /** A choice about an alert. Takes the raw addresses, and works out itself which side is ours. */
-    decide({ src, dst, ...d }: { site: string; action: Exclude<Action, 'rule_on' | 'rule_off'>; sid: number; src: string; dst: string; signature: string; user: string }): Done | Refused {
+    decide({ src, dst, ...d }: { site: string; action: Exclude<Action, 'rule_on' | 'rule_off'>; sid: number; src: string; dst: string; signature: string; user: string; reason?: string | undefined }): Done | Refused {
       if (d.site !== c.site) return refuse('That is another site')
       const { machine, remote, direction } = orient(src, dst, c.internal)
       if (d.action === 'block') {
@@ -39,21 +39,21 @@ export function createService(decisions: ReturnType<typeof openDecisions>, plugi
       return record({ ...d, machine, remote }, direction === 'in' ? 'in' : 'out')
     },
     /** A rule on or off for everyone, or off for one machine. */
-    setRule({ sid, on, signature, machine, user }: { sid: number; on: boolean; signature: string; machine?: string | undefined; user: string }): Done | Refused {
+    setRule({ sid, on, signature, machine, user, reason }: { sid: number; on: boolean; signature: string; machine?: string | undefined; user: string; reason?: string | undefined }): Done | Refused {
       const here = decisions.active().filter((d) => d.site === c.site && d.sid === sid)
       if (machine !== undefined) {
         if (on) return refuse('A rule can be turned off for one machine, not on')
         if (!isInternal(machine, c.internal)) return refuse('That is not one of your machines')
         if (!plugins.handles(c.site, 'rule.silence')) return refuse('No plugin manages rules at this site', 409)
         if (here.some((d) => d.machine === machine && d.action === 'silence_machine')) return refuse('Already off for that machine', 409)
-        return record({ site: c.site, action: 'silence_machine', sid, machine, remote: '', signature, user })
+        return record({ site: c.site, action: 'silence_machine', sid, machine, remote: '', signature, user, reason })
       }
       if (!plugins.handles(c.site, on ? 'rule.enable' : 'rule.disable')) return refuse('No plugin manages rules at this site', 409)
       if (here.some((d) => ruleActions.includes(d.action))) return refuse('Undo the earlier decision on this rule first', 409)
-      return record({ site: c.site, action: on ? 'rule_on' : 'rule_off', sid, machine: '', remote: '', signature, user })
+      return record({ site: c.site, action: on ? 'rule_on' : 'rule_off', sid, machine: '', remote: '', signature, user, reason })
     },
-    undo: (id: number, user: string): boolean => transaction(() => {
-      const ok = decisions.undo(id, user)
+    undo: (id: number, user: string, reason?: string): boolean => transaction(() => {
+      const ok = decisions.undo(id, user, reason)
       if (ok) plugins.undo(id)
       return ok
     }),

@@ -7,6 +7,7 @@ Redoubt has one built-in conversation (the Agent page) and serves the same tools
 - The tools are an MCP server inside Redoubt (`src/server/mcp.ts`). The built-in chat connects to it in memory; remote clients connect over streamable HTTP. Both get exactly the same tools.
 - Tools only call the functions the pages use (`services` in `src/server/app.ts`), so an agent can do nothing a button can't, and Redoubt's policy (internal addresses are never blocked, the never-block list) applies to it too.
 - Change tools: `decide_alert`, `set_rule`, `undo_decision`. In the built-in chat each one waits for the person: all changes from one reply appear on one card with a checkbox each. A remote client's own approval prompt is the gate there, so only give read-write tokens to clients that ask before running tools.
+- Each change carries the agent's reason, which History shows. The rule's name on a decision is looked up by Redoubt from the sid (sensor rule set, else recent alerts), never taken from the model.
 - `report_gap` lets any agent note a missing tool or confusing data on the Feedback page.
 - Decisions made by the agent are recorded as `<person> (agent)`; by a remote client as `token:<name>`.
 

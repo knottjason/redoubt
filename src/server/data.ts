@@ -140,3 +140,9 @@ export async function summary() {
   const [h] = await q<{ f: string }>(`SELECT ${iso('min(ts)')} AS f FROM flows`)
   return { drops: Number(s?.dd ?? 0), packets: Number(s?.dp ?? 0), sensorOk: Number(s?.age ?? 1e9) < 180 && Number(s?.dp ?? 0) > 0, since: h?.f ?? null }
 }
+
+/** A rule's name as the sensor reported it, from the last 30 days of alerts. */
+export async function signatureOf(sid: number): Promise<string | null> {
+  const [r] = await q<{ s: string }>(`SELECT any(a.signature) AS s FROM alerts a WHERE sid = {sid:UInt32} AND ts > now() - INTERVAL 30 DAY HAVING count() > 0`, { sid })
+  return r?.s || null
+}

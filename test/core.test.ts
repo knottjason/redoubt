@@ -54,3 +54,12 @@ test('decisions made before sites existed move to this site, once', () => {
   assert.equal(openDecisions(dir, 'a').history()[0]?.site, 'a')
   assert.equal(openDecisions(dir, 'b').history()[0]?.site, 'a')
 })
+
+test('a decision keeps its reason, and so does undoing it', () => {
+  const d = openDecisions(':memory:', 'a')
+  const id = d.add({ site: 'a', action: 'block', sid: 1, machine: '192.0.2.9', remote: '203.0.113.5', signature: 'Example', user: 'example (agent)', reason: 'On a threat list' })
+  assert.equal(d.get(id)?.reason, 'On a threat list')
+  d.undo(id, 'example', 'False positive')
+  assert.equal(d.get(id)?.undo_reason, 'False positive')
+  assert.equal(d.get(d.add({ site: 'a', action: 'allow', sid: 1, machine: '192.0.2.9', remote: '203.0.113.5', signature: 'Example', user: 'example' }))?.reason, null)
+})
