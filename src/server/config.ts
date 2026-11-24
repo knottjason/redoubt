@@ -29,6 +29,8 @@ export const config = {
   },
   internal: parseNetworks(internalSpec),
   internalList: `${internalSpec},${specialNetworks}`.split(',').map((n) => n.trim()).filter(Boolean),
+  // Never blocked for everyone (one machine still can be): your resolvers, VPN peers, shared CDN ranges.
+  neverBlock: parseNetworks(env.NEVER_BLOCK ?? ''),
   dataDir: env.DATA_DIR ?? './data',
   hostsFile: env.HOSTS_FILE ?? './hosts.json',
   trustedProxies: parseNetworks(env.TRUSTED_PROXIES ?? ''),
@@ -39,6 +41,8 @@ export const config = {
 
 let hosts: Record<string, string> = {}
 let hostsMtime = 0
+let learned: Record<string, string> = {}
+export const setLearned = (names: Record<string, string>) => { learned = names }
 export function hostName(ip: string): string {
   try {
     const m = statSync(config.hostsFile).mtimeMs
@@ -49,5 +53,5 @@ export function hostName(ip: string): string {
   } catch {
     // No names file: addresses are shown as they are.
   }
-  return Object.hasOwn(hosts, ip) ? hosts[ip]! : ''
+  return Object.hasOwn(learned, ip) ? learned[ip]! : Object.hasOwn(hosts, ip) ? hosts[ip]! : ''
 }

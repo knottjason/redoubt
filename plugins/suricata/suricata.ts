@@ -180,7 +180,7 @@ export function suricata(p: Paths, tools: Tools = realTools): Plugin {
     async health() {
       const u = lastUpdate()
       const day = u.at.slice(0, 16).replace('T', ' ')
-      const about = !u.at ? '' : u.note.startsWith('failed') ? `; rule update ${day} UTC ${u.note}` : `; rules updated ${day} UTC, ${u.added} new, ${u.gone} gone`
+      const about = !u.at ? '' : u.note.startsWith('failed') ? `; rule update ${day} UTC ${u.note}` : u.note === 'updated' ? `; rules updated ${day} UTC, ${u.added} new, ${u.gone} gone` : `; rules already current ${day} UTC`
       return { healthy: !trouble && !u.note.startsWith('failed'), message: (busy ? 'Reloading rules' : trouble || `${(await all()).filter((r) => r.on).length} rules on${about}`).slice(0, 390) }
     },
     async rules({ find, state, offset, limit }) {

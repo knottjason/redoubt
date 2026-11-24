@@ -49,7 +49,7 @@ export function Detail({ a }: { a: Alert }) {
         <Button h={40} px={6} variant="default" loading={m.isPending} onClick={() => { if (confirm(`Turn rule ${a.sid} off in the sensor for every machine? It records nothing while off.`)) go('silence_all') }}>Everyone</Button>
       </Choice>
       {q.data?.samples[0]?.dport === 53 && <Notice color="yellow">This is a DNS lookup, so "{who}" may be your DNS server asking for someone else. A choice for this host would then cover every machine behind it.</Notice>}
-      <Choice title="Block" note="Recorded only."><Button h={40} px={6} color="red" variant="light" disabled={!a.blockable} loading={m.isPending} onClick={() => go('block')}>Request block</Button></Choice>
+      <Choice title="Block" note="Drops traffic once a firewall plugin is connected; until then it is only recorded."><Button h={40} px={6} color="red" variant="light" disabled={!a.blockable} loading={m.isPending} onClick={() => { if (confirm(`${note} Block it?`)) go('block') }}>Block</Button></Choice>
       <div className="dim">{note} Host choices follow the address, so give that host a fixed one.</div>
       {m.error && <Notice color="red">{m.error.message}</Notice>}
       {a.decision && <div><Applied d={a.decision} /></div>}

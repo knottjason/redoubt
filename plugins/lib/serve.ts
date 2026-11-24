@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { prefix, same, signReply, signRequest, type ApplyReply, type ApplyRequest, type Describe, type Entry, type ListReply, type RulesReply, type RulesRequest } from '../../src/shared/plugin.ts'
+import { prefix, same, signReply, signRequest, type ApplyReply, type ApplyRequest, type Describe, type DevicesReply, type Entry, type ListReply, type RulesReply, type RulesRequest } from '../../src/shared/plugin.ts'
 
 export type Plugin = {
   describe: Describe
@@ -12,6 +12,7 @@ export type Plugin = {
   present?(): Promise<string[]>
   /** Work of its own, never at the same time as apply. */
   background?: { every: number; run(): Promise<void> }
+  devices?(): Promise<DevicesReply>
   rules?(r: RulesRequest): Promise<RulesReply>
 }
 type State = { instance: string; revision: number; ids: string[] }
@@ -61,6 +62,9 @@ export function createPlugin(plugin: Plugin, o: { key: string; stateDir: string 
         queue = run.catch(() => {})
         return run
       }
+      case 'devices':
+        if (plugin.devices) return plugin.devices()
+        break
       case 'rules': if (plugin.rules) return plugin.rules(JSON.parse(body) as RulesRequest)
     }
     throw Object.assign(new Error('Unknown action'), { status: 404 })

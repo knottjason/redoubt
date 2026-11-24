@@ -2,7 +2,7 @@
 
 One screen for a home network: Suricata alerts with a decision to make, and every machine's bandwidth, connections and "have we seen this before?".
 
-Early days. Overview, Alerts, Machines, Rules, History and Plugins work. Blocking is **recorded only**: no plugin does it yet.
+Early days. Overview, Alerts, Machines, Rules, History and Plugins work. A decision with no plugin behind it is recorded only.
 
 TypeScript, Hono, React, react-query, Mantine, TanStack Table. Reads ClickHouse (read-only), keeps decisions in SQLite.
 
@@ -14,6 +14,8 @@ TypeScript, Hono, React, react-query, Mantine, TanStack Table. Reads ClickHouse 
 Put it behind a reverse proxy that signs people in and sets `Remote-User`, and list that proxy in `TRUSTED_PROXIES`. Everything else is refused.
 
 ## Plugins
+
+The contract is in [docs/plugins.md](docs/plugins.md). There are plugins for Suricata and [MikroTik](plugins/mikrotik/README.md).
 
 Redoubt never touches a device itself. A plugin is a small HTTP service, usually its own container, that holds the login for one kind of device and is added on the Plugins page by its address and a shared key. Redoubt never needs the Docker socket.
 

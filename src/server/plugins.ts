@@ -1,14 +1,20 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
-import { kinds, prefix, same, signReply, signRequest, type Entry, type Kind, type RulesRequest } from '../shared/plugin.ts'
+import { kinds, prefix, same, signReply, signRequest, type Entry, type Fact, type Kind, type RulesRequest } from '../shared/plugin.ts'
 import type { Decision } from './decisions.ts'
 
 export type State = 'requested' | 'active' | 'failed' | 'removing' | 'removed'
-type PluginRow = { id: number; site: string; url: string; key: string; name: string; version: string; kinds: string; rules: number; revision: number; dirty: number; tries: number; next_try: number; last_ok: string | null; error: string; message: string }
+type PluginRow = { id: number; site: string; url: string; key: string; name: string; version: string; kinds: string; rules: number; devices: number; revision: number; dirty: number; tries: number; next_try: number; last_ok: string | null; error: string; message: string }
 export type EntryRow = { id: string; plugin: number; decision: number; kind: Kind; sid: number; machine: string; remote: string; label: string; state: State; error: string }
 
-const describe = z.object({ name: z.string().min(1).max(60), version: z.string().max(40), kinds: z.array(z.enum(kinds)), rules: z.boolean() })
+const describe = z.object({ name: z.string().min(1).max(60), version: z.string().max(40), kinds: z.array(z.enum(kinds)), rules: z.boolean(), devices: z.boolean().default(false) })
+const nul = z.string().max(200).nullable()
+const devicesReply = z.object({
+  facts: z.array(z.object({ router: z.string().max(60), source: z.enum(['dhcp', 'arp', 'dns']), ref: z.string().max(60), hash: z.string().max(64), mac: nul, random_mac: z.boolean(), ip: nul, comment: nul, hostname: nul,
+    dns: z.array(z.string().max(200)).max(50), static: z.boolean(), interface: nul, seen: nul })).max(20_000),
+  errors: z.array(z.object({ router: z.string(), error: z.string() })),
+})
 const applied = z.object({ results: z.array(z.object({ id: z.string(), ok: z.boolean(), error: z.string().max(400).optional() })) })
 const listed = z.object({ instance: z.string(), revision: z.number(), ids: z.array(z.string()), healthy: z.boolean(), message: z.string().max(400) })
 const ruleList = z.object({ total: z.number(), on: z.number(), off: z.number(), rows: z.array(z.object({ sid: z.number(), msg: z.string(), classtype: z.string(), group: z.string(), severity: z.number(), on: z.boolean() })) })
@@ -51,6 +57,7 @@ export function openPlugins(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS entries (id TEXT PRIMARY KEY, plugin INTEGER NOT NULL REFERENCES plugins(id), decision INTEGER NOT NULL, kind TEXT NOT NULL, sid INTEGER NOT NULL,
       machine TEXT NOT NULL, remote TEXT NOT NULL, label TEXT NOT NULL, state TEXT NOT NULL, error TEXT NOT NULL DEFAULT '');
     CREATE INDEX IF NOT EXISTS entries_decision ON entries (decision);`)
+  if (!db.prepare('PRAGMA table_info(plugins)').all().some((c) => c.name === 'devices')) db.exec('ALTER TABLE plugins ADD COLUMN devices INTEGER NOT NULL DEFAULT 0')
   db.prepare("INSERT OR IGNORE INTO settings (k, v) VALUES ('instance', ?)").run(randomUUID())
   const instance = (db.prepare("SELECT v FROM settings WHERE k = 'instance'").get() as { v: string }).v
   const rows = () => db.prepare('SELECT * FROM plugins ORDER BY id').all() as unknown as PluginRow[]
@@ -109,7 +116,7 @@ export function openPlugins(db: DatabaseSync) {
       const d = await call({ url, key }, 'describe', {}, describe)
       const taken = rows().filter((p) => p.site === site).find((p) => (JSON.parse(p.kinds) as Kind[]).some((k) => d.kinds.includes(k)))
       if (taken) throw new Error(`${taken.name} already handles that at this site`)
-      db.prepare('INSERT INTO plugins (site, url, key, name, version, kinds, rules) VALUES (?,?,?,?,?,?,?)').run(site, url, key, d.name, d.version, JSON.stringify(d.kinds), d.rules ? 1 : 0)
+      db.prepare('INSERT INTO plugins (site, url, key, name, version, kinds, rules, devices) VALUES (?,?,?,?,?,?,?,?)').run(site, url, key, d.name, d.version, JSON.stringify(d.kinds), d.rules ? 1 : 0, d.devices ? 1 : 0)
       return d
     },
     /** Only once nothing of ours is left on the device. */
@@ -135,6 +142,20 @@ export function openPlugins(db: DatabaseSync) {
     },
     states: () => new Map((db.prepare(`SELECT e.decision, e.state, CASE WHEN e.error != '' THEN e.error ELSE p.error END AS error, p.name FROM entries e JOIN plugins p ON p.id = e.plugin`).all() as { decision: number; state: State; error: string; name: string }[])
       .map((e) => [e.decision, { state: e.state, error: e.error, plugin: e.name }])),
+    async devices(site: string) {
+      const facts: z.infer<typeof devicesReply>['facts'] = []
+      const errors: { router: string; error: string }[] = []
+      for (const p of rows().filter((x) => x.site === site && x.devices)) {
+        try {
+          const r = await call(p, 'devices', {}, devicesReply, 60_000)
+          facts.push(...r.facts)
+          errors.push(...r.errors)
+        } catch (e) {
+          errors.push({ router: p.name, error: reason(e) })
+        }
+      }
+      return { facts, errors }
+    },
     async rules(site: string, r: RulesRequest) {
       const p = rows().find((x) => x.site === site && x.rules)
       return p ? call(p, 'rules', r, ruleList, 30_000) : null
@@ -145,4 +166,15 @@ function reason(e: unknown): string {
   if (!(e instanceof Error)) return 'Failed'
   if (e.name === 'TimeoutError') return 'No answer in time'
   return (e.message === 'fetch failed' ? 'Cannot reach the plugin' : e.message).slice(0, 300)
+}
+
+/** The best name for each address: what a person called it, then what it calls itself, then DNS. */
+export function namesFrom(facts: Pick<Fact, 'ip' | 'comment' | 'hostname' | 'dns' | 'source'>[]): Record<string, string> {
+  const best: Record<string, { name: string; rank: number }> = {}
+  for (const f of facts) {
+    if (!f.ip) continue
+    const [name, rank] = f.source === 'dhcp' && f.comment ? [f.comment, 3] : f.hostname ? [f.hostname, 2] : f.dns[0] ? [f.dns[0], 1] : ['', 0]
+    if (name && rank > (best[f.ip]?.rank ?? 0)) best[f.ip] = { name, rank }
+  }
+  return Object.fromEntries(Object.entries(best).map(([ip, b]) => [ip, b.name]))
 }

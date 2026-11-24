@@ -5,13 +5,39 @@ export type Entry = { id: string; kind: Kind; sid?: number; machine?: string; re
 export const kinds = ['rule.disable', 'rule.enable', 'rule.silence', 'block.pair', 'block.remote'] as const
 export type Kind = (typeof kinds)[number]
 
-export type Describe = { name: string; version: string; kinds: Kind[]; rules: boolean }
+export type Describe = { name: string; version: string; kinds: Kind[]; rules: boolean; devices?: boolean }
 export type ApplyRequest = { instance: string; revision: number; entries: Entry[] }
 export type ApplyReply = { results: { id: string; ok: boolean; error?: string }[] }
 export type ListReply = { instance: string; revision: number; ids: string[]; healthy: boolean; message: string }
 export type RulesRequest = { find: string; state: 'all' | 'on' | 'off'; offset: number; limit: number }
 export type RuleRow = { sid: number; msg: string; classtype: string; group: string; severity: number; on: boolean }
 export type RulesReply = { total: number; on: number; off: number; rows: RuleRow[] }
+
+
+/** One thing one source on one router says about a device. Plugins report what they see; Redoubt decides which facts are the same device. */
+export type Fact = {
+  router: string
+  source: 'dhcp' | 'arp' | 'dns'
+  /** Opaque handle for this record on that router. Not stable across routers. */
+  ref: string
+  /** Changes whenever anything below changes, so a rename on the router is noticed. */
+  hash: string
+  mac: string | null
+  /** The address was made up by the device (locally administered), so it is a poor identity. */
+  random_mac: boolean
+  ip: string | null
+  /** The name a person gave it: the comment of a static lease. */
+  comment: string | null
+  /** The name the device gave itself. */
+  hostname: string | null
+  /** Static DNS names that point at this address. */
+  dns: string[]
+  /** It has a fixed lease. */
+  static: boolean
+  interface: string | null
+  seen: string | null
+}
+export type DevicesReply = { facts: Fact[]; errors: { router: string; error: string }[] }
 
 export const prefix = '/redoubt/v1/'
 const mac = (key: string, parts: string[]) => createHmac('sha256', key).update(parts.join('\n')).digest('hex')

@@ -5,10 +5,10 @@ import { getConnInfo } from '@hono/node-server/conninfo'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { isInternal, orient } from '../shared/net.ts'
-import { config, hostName } from './config.ts'
+import { config, hostName, setLearned } from './config.ts'
 import * as data from './data.ts'
 import { actions, decisionFor, openDecisions } from './decisions.ts'
-import { openPlugins, wants } from './plugins.ts'
+import { namesFrom, openPlugins, wants } from './plugins.ts'
 
 const decisions = openDecisions(config.dataDir, config.site)
 const plugins = openPlugins(decisions.db)
@@ -16,6 +16,9 @@ if (config.runQueue) {
   setInterval(() => void plugins.deliverDue(), 2_000).unref()
   setInterval(() => void plugins.checkAll(), 60_000).unref()
   void plugins.checkAll()
+  const learn = async () => setLearned(namesFrom((await plugins.devices(config.site)).facts))
+  setInterval(() => void learn(), 300_000).unref()
+  void learn()
 }
 // Never trust the browser on which way a connection went or what may be blocked.
 function record(d: Parameters<typeof decisions.add>[0], direction: 'in' | 'out' = 'out') {
@@ -99,6 +102,7 @@ const api = new Hono<Env>()
     const { src, dst, ...d } = c.req.valid('json')
     const { machine, remote, direction } = orient(src, dst, config.internal)
     if (d.action === 'block' && isInternal(remote, config.internal)) return c.json({ error: 'Internal addresses are never blocked' }, 400)
+    if (d.action === 'block' && direction === 'in' && config.neverBlock.check(remote, remote.includes(':') ? 'ipv6' : 'ipv4')) return c.json({ error: 'That address is on the never-block list' }, 400)
     return c.json(record({ ...d, machine, remote, user: c.get('user') }, direction === 'in' ? 'in' : 'out'), 201)
   })
   .post('/decisions/:id/undo', zValidator('param', z.object({ id: z.coerce.number().int().positive() })), (c) =>
@@ -132,6 +136,7 @@ const api = new Hono<Env>()
     if (decisions.active().some((d) => d.site === config.site && d.sid === sid && ['rule_off', 'rule_on', 'silence_all'].includes(d.action))) return c.json({ error: 'Undo the earlier decision on this rule first' }, 409)
     return c.json(record({ site: config.site, action: on ? 'rule_on' : 'rule_off', sid, machine: '', remote: '', signature, user: c.get('user') }), 201)
   })
+  .get('/devices', async (c) => c.json(await plugins.devices(config.site)))
   .get('/plugins', (c) => c.json(plugins.list()))
   .post('/plugins/describe', zValidator('json', z.object({ url: pluginUrl, key: pluginKey })), async (c) => {
     const { url, key } = c.req.valid('json')

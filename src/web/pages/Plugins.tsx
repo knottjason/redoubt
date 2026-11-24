@@ -18,7 +18,7 @@ export function Plugins() {
     <Load q={q}><Grid data={q.data ?? []} rowKey={(p) => String(p.id)} empty="No plugins yet. Decisions are recorded only." columns={[
       { accessorKey: 'name', header: 'Plugin', cell: ({ row: { original: p } }) => <>{p.name} <span className="dim">{p.version}</span><div className="mono dim">{p.url}</div></> },
       { accessorKey: 'site', header: 'Site' },
-      { id: 'can', header: 'Can', cell: ({ row: { original: p } }) => <span className="dim">{p.kinds.map((k) => says[k] ?? k).join(', ')}</span> },
+      { id: 'can', header: 'Can', cell: ({ row: { original: p } }) => <span className="dim">{[...p.kinds.map((k) => says[k] ?? k), ...(p.devices ? ['list devices'] : [])].join(', ')}</span> },
       { accessorKey: 'entries', header: 'In place', meta: { right: true } },
       { id: 'state', header: 'State', cell: ({ row: { original: p } }) => p.error ? <span style={{ color: '#ff8a8a' }}>{p.error}</span> : p.dirty ? <span style={{ color: '#f5a524' }}>Sending changes</span> : <span style={{ color: '#6fe0ad' }}>{p.message || 'OK'}</span> },
       { accessorKey: 'last_ok', header: 'Last answer', cell: (c: any) => <span className="mono dim">{when(c.getValue())}</span> },
@@ -28,7 +28,7 @@ export function Plugins() {
       <div className="label">Add a plugin</div>
       <TextInput label="Address" placeholder="http://plugin:8790" value={url} onChange={(e) => { setUrl(e.currentTarget.value); look.reset() }} />
       <PasswordInput label="Shared key" autoComplete="off" value={key} onChange={(e) => { setKey(e.currentTarget.value); look.reset() }} />
-      {look.data && <Notice color="yellow" title={`${look.data.name} ${look.data.version} wants to`}>{look.data.kinds.map((k) => says[k] ?? k).join(', ')}</Notice>}
+      {look.data && <Notice color="yellow" title={`${look.data.name} ${look.data.version} wants to`}>{[...look.data.kinds.map((k) => says[k] ?? k), ...(look.data.devices ? ['list devices'] : [])].join(', ')}</Notice>}
       <Group>{look.data
         ? <Button type="button" loading={add.isPending} onClick={() => add.mutate({ url, key }, { onSuccess: () => { setUrl(''); setKey(''); look.reset() } })}>Approve and add</Button>
         : <Button type="submit" loading={look.isPending} disabled={!url || key.length < 32}>Look at it</Button>}</Group>
