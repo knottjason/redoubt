@@ -1,4 +1,4 @@
-import { BlockList, isIPv4 } from 'node:net'
+import { BlockList, isIP, isIPv4 } from 'node:net'
 import type { DatabaseSync } from 'node:sqlite'
 import { isInternal, parseNetworks } from '../shared/net.ts'
 import type { Fact } from '../shared/plugin.ts'
@@ -23,6 +23,17 @@ type Row = Omit<Device, 'random_mac' | 'dns' | 'static' | 'want_dns'> & { random
 const day = 86_400_000
 const slash24 = (ip: string) => `${ip.split('.').slice(0, 3).join('.')}.0/24`
 const guest = /guest/i
+// Not one device: multicast, broadcast, loopback, unspecified, link-local. Link-local IPv6 addresses are real hosts, but every
+// device has one beside its real address, so they would only make duplicates.
+const notDevices = parseNetworks('0.0.0.0/8,127.0.0.0/8,169.254.0.0/16,224.0.0.0/3,::/127,fe80::/10,ff00::/8')
+/** An address that can be one device on the network: ours, unicast, not a broadcast. */
+export function deviceAddress(ip: string, internal: BlockList): boolean {
+  const v4 = isIPv4(ip)
+  if (!v4 && !isIP(ip)) return false
+  if (notDevices.check(ip, v4 ? 'ipv4' : 'ipv6')) return false
+  if (v4 && ip.endsWith('.255')) return false
+  return isInternal(ip, internal)
+}
 
 /** Shown name: what a person called it here, then on the router, then what it calls itself, then DNS. */
 export const shown = (d: Pick<Device, 'name' | 'router_name' | 'hostname' | 'dns'>) => d.name || d.router_name || d.hostname || d.dns[0] || ''
@@ -60,6 +71,13 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     }
     for (const d of byId.values()) if (d.ip && shown(d)) m.set(d.ip, shown(d))
     names = m
+  }
+  // Clear out addresses that were wrongly made devices: nothing a person or a router said about them is lost.
+  {
+    const junk = (db.prepare("SELECT id, ip FROM devices WHERE site = ? AND mac IS NULL AND name = '' AND router_name = ''").all(site) as { id: number; ip: string | null }[])
+      .filter((d) => !d.ip || !deviceAddress(d.ip, internal)).map((d) => d.id)
+    for (const id of junk) for (const t of ['device_events', 'device_ips']) db.prepare(`DELETE FROM ${t} WHERE device = ?`).run(id)
+    for (const id of junk) db.prepare('DELETE FROM devices WHERE id = ?').run(id)
   }
   let byId = new Map<number, Device>()
   const reload = () => { byId = new Map(all().map((d) => [d.id, d])); index() }
@@ -144,7 +162,7 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
       for (const ip of dnsFor.keys()) rest.set(ip, at)
       for (const t of traffic) rest.set(t.ip, t.last)
       for (const [ip, when] of rest) {
-        if (done.has(ip) || !isInternal(ip, internal)) continue
+        if (done.has(ip) || !deviceAddress(ip, internal)) continue
         const id = find.ip(ip, false)?.id ?? make(ip)
         db.prepare('UPDATE devices SET ip = ?, dns = CASE WHEN mac IS NULL THEN ? ELSE dns END, last_seen = max(last_seen, ?) WHERE id = ?').run(ip, JSON.stringify(dnsFor.get(ip) ?? []), when, id)
         seenAt(ip, id, when)
@@ -184,7 +202,7 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     rename(target: { id: number } | { ip: string }, name: string, wantDns: boolean): Device | undefined {
       let id = 'id' in target ? get(target.id)?.id : [...byId.values()].find((d) => d.ip === target.ip)?.id
       if (id === undefined && 'ip' in target) {
-        if (!isInternal(target.ip, internal)) return undefined
+        if (!deviceAddress(target.ip, internal)) return undefined
         const at = new Date().toISOString()
         id = Number(db.prepare('INSERT INTO devices (site, ip, first_seen, last_seen) VALUES (?, ?, ?, ?)').run(site, target.ip, at, at).lastInsertRowid)
         db.prepare('INSERT OR IGNORE INTO device_ips (device, ip, first, last) VALUES (?, ?, ?, ?)').run(id, target.ip, at, at)

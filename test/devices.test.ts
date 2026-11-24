@@ -84,3 +84,14 @@ test('new devices raise an event on watched networks only, never on the first lo
   assert.deepEqual(d.events().map((e) => d.get(e.device)!.ip), ['198.51.100.6'])
   assert.throws(() => d.watch('nonsense', true))
 })
+
+test('multicast, broadcast, link-local and outside addresses never become devices, and old ones are cleared', () => {
+  const db = new DatabaseSync(':memory:')
+  const d = openDevices(db, 'a', own)
+  const at = '2026-01-01T00:00:00Z'
+  d.refresh([], ['224.0.0.251', '239.255.255.250', '255.255.255.255', '192.0.2.255', '0.0.0.0', 'ff02::fb', 'fe80::1', '::', '203.0.113.5', '192.0.2.8'].map((ip) => ({ ip, last: at })))
+  assert.deepEqual(d.list().map((x) => x.ip), ['192.0.2.8'])
+  assert.equal(d.rename({ ip: 'ff02::1' }, 'x', false), undefined)
+  db.prepare("INSERT INTO devices (site, ip, first_seen, last_seen) VALUES ('a', 'ff02::fb', ?, ?)").run(at, at)
+  assert.deepEqual(openDevices(db, 'a', own).list().map((x) => x.ip), ['192.0.2.8'])
+})
