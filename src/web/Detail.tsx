@@ -19,7 +19,7 @@ export function Detail({ a }: { a: Alert }) {
       <h2 style={{ margin: 0, fontSize: 16, lineHeight: 1.35 }}>{a.signature}</h2>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div className="inset"><div className="label">Machine</div><Machine ip={a.machine} name={a.machineName} /></div>
-        <div className="inset"><div className="label">Remote · {{ in: 'inbound', out: 'outbound', internal: 'internal' }[a.direction]}</div><div className="mono">{a.remote}</div><div className="dim">{a.remoteName || q.data?.sites[0]}</div></div>
+        <div className="inset"><div className="label">Remote · {{ in: 'inbound', out: 'outbound', internal: 'internal' }[a.direction]}</div><div className="mono" style={{ whiteSpace: 'normal' }}>{a.remote}</div><div className="dim">{a.remoteName || q.data?.sites[0]}</div></div>
       </div>
       <Load q={q}>{q.data && <>
         <div className="inset"><div className="label">Has this happened before?</div>

@@ -1,5 +1,5 @@
 body { background: #0b0e12; font-size: 13px; }
-.mono { font-family: var(--mantine-font-family-monospace); font-variant-numeric: tabular-nums; font-size: 12px; }
+.mono { white-space: nowrap; font-family: var(--mantine-font-family-monospace); font-variant-numeric: tabular-nums; font-size: 12px; }
 .dim { color: #9aa4b2; }
 .panel { background: #0f1318; border: 1px solid #222a33; border-radius: 8px; }
 .inset { background: #151a20; border: 1px solid #222a33; border-radius: 8px; padding: 10px 12px; min-width: 0; overflow-wrap: anywhere; }
@@ -17,7 +17,7 @@ body { background: #0b0e12; font-size: 13px; }
 table.grid { width: 100%; border-collapse: collapse; }
 table.grid th { text-align: left; font-weight: 500; padding: 9px 12px; color: #9aa4b2; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; white-space: nowrap; }
 table.grid th button { all: unset; cursor: pointer; } table.grid th button:focus-visible { outline: 2px solid #4c8dff; }
-table.grid td { padding: 8px 12px; border-top: 1px solid #1d242c; vertical-align: top; }
+table.grid td { font-size: 12.5px; padding: 8px 12px; border-top: 1px solid #1d242c; vertical-align: top; }
 table.grid tr.click { cursor: pointer; } table.grid tr.click:hover { background: #151a20; } table.grid tr.sel { background: #16243a; box-shadow: inset 3px 0 0 #4c8dff; }
 table.grid tr.click:focus-visible { outline: 2px solid #4c8dff; outline-offset: -2px; }
 .r { text-align: right !important; }

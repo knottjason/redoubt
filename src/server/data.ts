@@ -20,7 +20,7 @@ export async function alerts(hours: number): Promise<AlertRow[]> {
   const rows = await q<{ sid: number; signature: string; category: string; severity: number; src: string; dst: string; hits: string; first: string; last: string }>(
     `SELECT sid, any(a.signature) AS signature, any(a.category) AS category, min(a.severity) AS severity, src, dst, count() AS hits,
        ${iso('min(ts)')} AS first, ${iso('max(ts)')} AS last
-     FROM alerts a WHERE ts > now() - toIntervalHour({hours:UInt32}) AND signature NOT LIKE 'SURICATA %'
+     FROM alerts a WHERE ts > now() - toIntervalHour({hours:UInt32}) AND a.signature NOT LIKE 'SURICATA %'
      GROUP BY sid, src, dst ORDER BY severity, max(ts) DESC LIMIT 2000`, { hours })
   const pairs = await q<{ src: string; dst: string; f: string; recent: number }>(
     `SELECT src, dst, ${iso('min(first_seen)')} AS f, min(first_seen) > now() - INTERVAL 24 HOUR AS recent FROM pairs
