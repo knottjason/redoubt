@@ -31,6 +31,11 @@ export const useRules = (hours: number) =>
   useQuery({ queryKey: ['rules', hours], queryFn: () => unwrap(client.rules.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
 export const useRuleset = (find: string, state: 'all' | 'on' | 'off', offset: number) =>
   useQuery({ queryKey: ['ruleset', find, state, offset], queryFn: () => unwrap(client.ruleset.$get({ query: { find, state, offset: String(offset) } })), refetchInterval: 3_000, placeholderData: keepPreviousData })
+export const useInventory = (hours: number) =>
+  useQuery({ queryKey: ['inventory', hours], queryFn: () => unwrap(client.inventory.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
+export const useRename = () => useAct((v: { id?: number; ip?: string; name: string; dns: boolean }) => unwrap(client.inventory.name.$post({ json: v })))
+export const useKnown = () => useAct((id: number) => unwrap(client.inventory[':id'].known.$post({ param: { id: String(id) } }, { headers: { 'content-type': 'application/json' } })))
+export const useWatch = () => useAct((v: { cidr: string; on: boolean }) => unwrap(client.inventory.watch.$post({ json: v })))
 export const usePlugins = () => useQuery({ queryKey: ['plugins'], queryFn: () => unwrap(client.plugins.$get()), refetchInterval: 5_000 })
 const json = { headers: { 'content-type': 'application/json' } }
 export function useAct<V>(f: (v: V) => Promise<unknown>) {

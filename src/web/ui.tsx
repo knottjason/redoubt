@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from 'react'
 import { flexRender, getCoreRowModel, getSortedRowModel, useReactTable, type ColumnDef, type SortingState } from '@tanstack/react-table'
 import { AreaChart } from '@mantine/charts'
-import { Alert as Notice, Badge, Loader } from '@mantine/core'
+import { ActionIcon, Alert as Notice, Badge, Button, Checkbox, Group, Loader, Popover, TextInput } from '@mantine/core'
 import { Link } from 'react-router'
-import type { Alert } from './api.ts'
+import { useRename, type Alert } from './api.ts'
 
 export const bytes = (n: number) => {
   const u = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -41,7 +41,29 @@ export function Applied({ d }: { d: { applied: { state: keyof typeof appliedText
 export const NewTag = () => <span style={{ color: '#f5a524', fontWeight: 600, fontSize: 11 }}>NEW</span>
 
 export function Machine({ ip, name }: { ip: string; name: string }) {
-  return <Link to={`/machines/${encodeURIComponent(ip)}`} onClick={(e) => e.stopPropagation()}>{name || ip}{name && <div className="mono dim">{ip}</div>}</Link>
+  return <span className="named"><Link to={`/machines/${encodeURIComponent(ip)}`} onClick={(e) => e.stopPropagation()}>{name || ip}{name && <div className="mono dim">{ip}</div>}</Link><Rename ip={ip} name={name} /></span>
+}
+
+/** Name a device from wherever its name shows. Only addresses inside the network can be named. */
+export function Rename({ ip, id, name, label, dns = false, always }: { ip?: string; id?: number; name: string; label?: string; dns?: boolean; always?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [v, setV] = useState(name)
+  const [d, setD] = useState(dns)
+  const save = useRename()
+  return <Popover opened={open} onChange={setOpen} position="bottom-start" withArrow trapFocus>
+    <Popover.Target><ActionIcon className={always ? undefined : 'pencil'} variant="subtle" size="sm" color="gray" aria-label={`Name ${label || name || ip || 'this device'}`} onClick={(e) => { e.stopPropagation(); setV(name); setD(dns); save.reset(); setOpen((o) => !o) }}>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z" /></svg>
+    </ActionIcon></Popover.Target>
+    <Popover.Dropdown onClick={(e) => e.stopPropagation()}>
+      <form style={{ display: 'grid', gap: 10, width: 260 }} onSubmit={(e) => { e.preventDefault(); save.mutate({ ...(id !== undefined ? { id } : { ip }), name: v, dns: d }, { onSuccess: () => setOpen(false) }) }}>
+        <TextInput size="xs" label="Name" data-autofocus placeholder={label || ip} value={v} maxLength={60} onChange={(e) => setV(e.currentTarget.value)} />
+        <Checkbox size="xs" label="Also a DNS name (fixes its address)" checked={d} onChange={(e) => setD(e.currentTarget.checked)} />
+        <div className="dim" style={{ fontSize: 11 }}>Leave empty to use the router's name.</div>
+        {save.error && <Notice color="red" p={6}>{save.error.message}</Notice>}
+        <Group justify="flex-end" gap={6}><Button size="compact-xs" variant="default" onClick={() => setOpen(false)}>Cancel</Button><Button size="compact-xs" type="submit" loading={save.isPending}>Save</Button></Group>
+      </form>
+    </Popover.Dropdown>
+  </Popover>
 }
 
 export function Load({ q, children }: { q: { isPending: boolean; error: Error | null }; children: ReactNode }) {

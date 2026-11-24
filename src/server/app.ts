@@ -8,16 +8,24 @@ import { config, hostName, setLearned } from './config.ts'
 import * as data from './data.ts'
 import { decisionFor, openDecisions } from './decisions.ts'
 import { createService, ruleActions } from './decide.ts'
-import { namesFrom, openPlugins } from './plugins.ts'
+import { openPlugins } from './plugins.ts'
+import { openDevices, shown } from './devices.ts'
 
 const decisions = openDecisions(config.dataDir, config.site)
 const plugins = openPlugins(decisions.db)
 const service = createService(decisions, plugins, config)
+const devices = openDevices(decisions.db, config.site, config.internal)
 if (config.runQueue) {
   setInterval(() => void plugins.deliverDue(), 2_000).unref()
   setInterval(() => void plugins.checkAll(), 60_000).unref()
   void plugins.checkAll()
-  const learn = async () => setLearned(namesFrom((await plugins.devices(config.site)).facts))
+  const learn = async () => {
+    try {
+      const [{ facts }, traffic] = await Promise.all([plugins.devices(config.site), data.machines(1).catch(() => [])])
+      devices.refresh(facts, traffic.map((t) => ({ ip: t.ip, last: t.last })))
+    } catch (e) { console.error('Devices:', e) }
+    setLearned(devices.names())
+  }
   setInterval(() => void learn(), 300_000).unref()
   void learn()
 }
@@ -39,7 +47,8 @@ export const services = {
   },
   machine: async (ip: string, hours: number) => {
     const m = await data.machine(ip, hours)
-    return { ...m, alerts: decided(m.alerts) }
+    const d = devices.byIp(ip)
+    return { ...m, alerts: decided(m.alerts), device: d ? { ...d, shown: shown(d) } : null }
   },
   history: () => {
     const s = plugins.states()
@@ -57,6 +66,24 @@ export const services = {
     })) }
   },
   devices: () => plugins.devices(config.site),
+  /** Every device, with what it did on the network over these hours. */
+  inventory: async (hours: number) => {
+    const traffic = new Map((await data.machines(hours).catch(() => [])).map((m) => [m.ip, m]))
+    return {
+      devices: devices.list().map((d) => {
+        const t = d.ip ? traffic.get(d.ip) : undefined
+        return { ...d, site: config.site, up: t?.up ?? 0, down: t?.down ?? 0, connections: t?.connections ?? 0, destinations: t?.destinations ?? 0, active: t?.last ?? null }
+      }),
+      networks: devices.networks(),
+    }
+  },
+  renameDevice: (target: { id: number } | { ip: string }, name: string, dns: boolean) => {
+    const d = devices.rename(target, name, dns)
+    setLearned(devices.names())
+    return d
+  },
+  ackDevice: (id: number, user: string) => devices.ack(id, user),
+  watchNetwork: (cidr: string, on: boolean) => devices.watch(cidr, on),
   plugins: () => plugins.list(),
 }
 const pluginUrl = z.url({ protocol: /^https?$/ }).max(200)
@@ -79,7 +106,7 @@ const api = new Hono<Env>()
     c.set('user', user)
     await next()
   })
-  .get('/summary', async (c) => c.json({ ...(await data.summary()), user: c.get('user') }))
+  .get('/summary', async (c) => c.json({ ...(await data.summary()), newDevices: devices.events().length, user: c.get('user') }))
   .get('/alerts', zValidator('query', hours), async (c) => c.json(await services.alerts(c.req.valid('query').hours)))
   .get('/alerts/detail', zValidator('query', alertKey), async (c) => {
     const { sid, src, dst } = c.req.valid('query')
@@ -107,6 +134,15 @@ const api = new Hono<Env>()
     return 'error' in r ? c.json({ error: r.error }, r.status) : c.json(r, 201)
   })
   .get('/devices', async (c) => c.json(await services.devices()))
+  .get('/inventory', zValidator('query', hours), async (c) => c.json(await services.inventory(c.req.valid('query').hours)))
+  .post('/inventory/name', zValidator('json', z.object({ id: z.number().int().positive().optional(), ip: ip.optional(), name: z.string().max(60).regex(/^[^\u0000-\u001f\u007f]*$/), dns: z.boolean().default(false) })
+    .refine((v) => (v.id === undefined) !== (v.ip === undefined), 'Give the device or its address')), (c) => {
+    const { id, ip: addr, name, dns } = c.req.valid('json')
+    const d = services.renameDevice(id !== undefined ? { id } : { ip: addr! }, name, dns)
+    return d ? c.json(d) : c.json({ error: 'No such device here' }, 404)
+  })
+  .post('/inventory/:id/known', zValidator('param', z.object({ id: z.coerce.number().int().positive() })), (c) => c.json({ ok: services.ackDevice(c.req.valid('param').id, c.get('user')) }))
+  .post('/inventory/watch', zValidator('json', z.object({ cidr: z.cidrv4(), on: z.boolean() })), (c) => c.json(services.watchNetwork(c.req.valid('json').cidr, c.req.valid('json').on)))
   .get('/plugins', (c) => c.json(services.plugins()))
   .post('/plugins/describe', zValidator('json', z.object({ url: pluginUrl, key: pluginKey })), async (c) => {
     const { url, key } = c.req.valid('json')
