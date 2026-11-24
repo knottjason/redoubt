@@ -31,4 +31,15 @@
 | `dns` | Static DNS names for this address |
 | `static` | A fixed lease |
 
-Setting a device's name on the router is planned and not part of the contract yet.
+### Reserved: `device.name`
+
+Not built yet. A future entry kind that writes a name back to the router:
+
+| Field | Meaning |
+|---|---|
+| `id`, `kind`, `label` | As for every entry; `label` is the name |
+| `machine` | The MAC address, or the IP when there is no lease |
+| `dns` | Optional. Also publish the name in DNS, and make the lease fixed |
+| `ref` | Optional. The fact's `ref`, as a hint |
+
+The plugin sends it to the router that serves that address. The DNS domain for each router is plugin configuration. Records it makes are marked as Redoubt's, and only those are ever removed.

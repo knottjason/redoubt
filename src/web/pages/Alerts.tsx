@@ -4,9 +4,18 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import { type Alert, useAlerts } from '../api.ts'
 import { Detail } from '../Detail.tsx'
+import { Grouped, alertKey, type GroupBy } from './Grouped.tsx'
 import { Grid, Load, Machine, NewTag, Sev, Status, when } from '../ui.tsx'
 
-const key = (a: Alert) => `${a.site}|${a.sid}|${a.src}|${a.dst}`
+const key = alertKey
+const groups = ['rule', 'category', 'pair'] as const
+const savedGroup = (): GroupBy => {
+  try {
+    return groups.find((g) => g === localStorage.getItem('redoubt-group')) ?? 'rule'
+  } catch {
+    return 'rule'
+  }
+}
 export const alertColumns: ColumnDef<Alert, any>[] = [
   { id: 'severity', accessorKey: 'severity', header: 'Sev', cell: (c) => <Sev s={c.row.original.severity} /> },
   { id: 'signature', accessorKey: 'signature', header: 'Rule', cell: ({ row: { original: a } }) => <><div className="clip" title={a.signature}>{a.signature}</div><div className="dim" style={{ fontSize: 11 }}>{a.category} {a.isNew && <NewTag />}</div></> },
@@ -23,22 +32,32 @@ export function Alerts() {
   const [hours, setHours] = useState('24')
   const [filter, setFilter] = useState<keyof typeof filters>('Open')
   const [find, setFind] = useState(useSearchParams()[0].get('find') ?? '')
+  const [group, setGroup] = useState(savedGroup)
+  const pickGroup = (g: string) => {
+    setGroup(g as GroupBy)
+    try {
+      localStorage.setItem('redoubt-group', g)
+    } catch {
+      // Not remembered, that's all.
+    }
+  }
   const [sel, setSel] = useState<string>()
   const q = useAlerts(Number(hours))
   const all = q.data ?? []
   const f = find.toLowerCase()
   const rows = all.filter(filters[filter]).filter((a) => !f || [a.signature, a.machine, a.machineName, a.remote, a.remoteName, String(a.sid)].some((v) => v.toLowerCase().includes(f)))
-  const current = all.find((a) => key(a) === sel) ?? rows[0]
+  const current = all.find((a) => key(a) === sel) ?? (group === 'pair' ? rows[0] : undefined)
   return (
     <div className="split">
       <main>
-        <Group justify="space-between" mb={14}><div><b style={{ fontSize: 18 }}>Alerts</b> <span className="dim">grouped by rule + machine + remote</span></div>
+        <Group justify="space-between" mb={14}><div><b style={{ fontSize: 18 }}>Alerts</b> </div>
           <SegmentedControl size="xs" value={hours} onChange={setHours} data={[{ value: '1', label: '1 h' }, { value: '24', label: '24 h' }, { value: '168', label: '7 d' }, { value: '720', label: '30 d' }]} /></Group>
         <Group mb={14} gap={6}>{(Object.keys(filters) as (keyof typeof filters)[]).map((k) => <Button key={k} size="xs" radius={16} variant={k === filter ? 'light' : 'default'} onClick={() => { setFilter(k); setSel(undefined) }}>{k}&nbsp;<span className="mono dim">{all.filter(filters[k]).length}</span></Button>)}
           <TextInput size="xs" ml="auto" aria-label="Find" placeholder="IP, machine, rule…" value={find} onChange={(e) => setFind(e.currentTarget.value)} /></Group>
-        <Load q={q}><Grid data={rows} columns={alertColumns} rowKey={key} selected={current && key(current)} onPick={(a) => setSel(key(a))} empty="Nothing here. Quiet is good." /></Load>
+        <Group mb={14} gap={8}><span className="label">Group by</span><SegmentedControl size="xs" value={group} onChange={pickGroup} data={[{ value: 'rule', label: 'Rule' }, { value: 'category', label: 'Category' }, { value: 'pair', label: 'Rule + host + remote' }]} /></Group>
+        <Load q={q}>{group !== 'pair' ? <Grouped rows={rows} group={group} selected={sel} onPick={(a) => setSel(key(a))} /> : <Grid data={rows} columns={alertColumns} rowKey={key} selected={current && key(current)} onPick={(a) => setSel(key(a))} empty="Nothing here. Quiet is good." />}</Load>
       </main>
-      <aside aria-label="Alert detail">{current ? <Detail key={key(current)} a={current} /> : <span className="dim">No alert selected.</span>}</aside>
+      <aside aria-label="Alert detail">{current ? <Detail key={key(current)} a={current} /> : <span className="dim">Open a rule and pick a host.</span>}</aside>
     </div>
   )
 }
