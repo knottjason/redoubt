@@ -5,5 +5,5 @@
     "allowImportingTsExtensions": true, "erasableSyntaxOnly": true, "verbatimModuleSyntax": true, "isolatedModules": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": ["src", "plugins", "test", "vite.config.ts"]
 }

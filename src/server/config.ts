@@ -33,6 +33,7 @@ export const config = {
   hostsFile: env.HOSTS_FILE ?? './hosts.json',
   trustedProxies: parseNetworks(env.TRUSTED_PROXIES ?? ''),
   authHeader: (env.AUTH_HEADER ?? 'remote-user').toLowerCase(),
+  runQueue: env.RUN_QUEUE !== 'false',
   devUser: env.NODE_ENV === 'production' ? '' : (env.DEV_USER ?? ''),
 }
 

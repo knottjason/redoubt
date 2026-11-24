@@ -26,11 +26,17 @@ export function Sev({ s }: { s: number }) {
 }
 const status = {
   allow: ['Allowed', '#6fe0ad', '#12291f'], silence_machine: ['Silenced · machine', '#9aa4b2', '#1b222b'],
-  silence_all: ['Silenced · all', '#9aa4b2', '#1b222b'], block: ['Block requested', '#ff8a8a', '#2a1416'],
+  silence_all: ['Silenced · all', '#9aa4b2', '#1b222b'], rule_off: ['Rule off', '#9aa4b2', '#1b222b'], rule_on: ['Rule on', '#6fe0ad', '#12291f'], block: ['Block requested', '#ff8a8a', '#2a1416'],
 } as const
 export function Status({ d }: { d: Alert['decision'] }) {
   const [t, c, b] = d ? status[d.action] : (['Open', '#e6e9ee', '#1b222b'] as const)
   return <Badge radius={4} size="sm" tt="none" styles={{ root: { color: c, background: b } }}>{t}</Badge>
+}
+const appliedText = { requested: 'Requested', active: 'Active', failed: 'Failed', removing: 'Removing', removed: 'Removed' } as const
+export function Applied({ d }: { d: { applied: { state: keyof typeof appliedText; error: string; plugin: string } | null } }) {
+  if (!d.applied) return <span className="dim">Recorded only</span>
+  const { state, error, plugin } = d.applied
+  return <span title={error} style={{ color: state === 'failed' || error ? '#ff8a8a' : state === 'active' ? '#6fe0ad' : '#f5a524' }}>{appliedText[state]} · {plugin}{error && <div style={{ fontSize: 11 }}>{error}</div>}</span>
 }
 export const NewTag = () => <span style={{ color: '#f5a524', fontWeight: 600, fontSize: 11 }}>NEW</span>
 

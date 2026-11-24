@@ -29,6 +29,18 @@ export const useOverview = (hours: number) =>
   useQuery({ queryKey: ['overview', hours], queryFn: () => unwrap(client.overview.$get({ query: { hours: String(hours) } })), refetchInterval: 30_000, placeholderData: keepPreviousData })
 export const useRules = (hours: number) =>
   useQuery({ queryKey: ['rules', hours], queryFn: () => unwrap(client.rules.$get({ query: { hours: String(hours) } })), refetchInterval: 60_000, placeholderData: keepPreviousData })
+export const useRuleset = (find: string, state: 'all' | 'on' | 'off', offset: number) =>
+  useQuery({ queryKey: ['ruleset', find, state, offset], queryFn: () => unwrap(client.ruleset.$get({ query: { find, state, offset: String(offset) } })), refetchInterval: 5_000, placeholderData: keepPreviousData })
+export const usePlugins = () => useQuery({ queryKey: ['plugins'], queryFn: () => unwrap(client.plugins.$get()), refetchInterval: 5_000 })
+const json = { headers: { 'content-type': 'application/json' } }
+export function useAct<V>(f: (v: V) => Promise<unknown>) {
+  const qc = useQueryClient()
+  return useMutation({ mutationFn: f, onSuccess: () => qc.invalidateQueries() })
+}
+export const useToggleRule = () => useAct((v: { sid: number; on: boolean; signature: string }) => unwrap(client.ruleset[':sid'].$post({ param: { sid: String(v.sid) }, json: { on: v.on, signature: v.signature } })))
+export const useDescribe = () => useMutation({ mutationFn: (v: { url: string; key: string }) => unwrap(client.plugins.describe.$post({ json: v })) })
+export const useAddPlugin = () => useAct((v: { url: string; key: string }) => unwrap(client.plugins.$post({ json: v })))
+export const useRemovePlugin = () => useAct((id: number) => unwrap(client.plugins[':id'].remove.$post({ param: { id: String(id) } }, json)))
 export const useHistory = () => useQuery({ queryKey: ['decisions'], queryFn: () => unwrap(client.decisions.$get()) })
 
 export type Alert = NonNullable<ReturnType<typeof useAlerts>['data']>[number]
@@ -40,7 +52,7 @@ export function useDecide() {
     mutationFn: async (v: { action: Action; alert: Alert } | { undo: number }): Promise<unknown> =>
       'undo' in v
         ? unwrap(client.decisions[':id'].undo.$post({ param: { id: String(v.undo) } }, { headers: { 'content-type': 'application/json' } }))
-        : unwrap(client.decisions.$post({ json: { site: v.alert.site, action: v.action, sid: v.alert.sid, machine: v.alert.machine, remote: v.alert.remote, signature: v.alert.signature } })),
+        : unwrap(client.decisions.$post({ json: { site: v.alert.site, action: v.action, sid: v.alert.sid, src: v.alert.src, dst: v.alert.dst, signature: v.alert.signature } })),
     onSuccess: () => qc.invalidateQueries(),
   })
 }

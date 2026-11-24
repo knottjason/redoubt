@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-export const actions = ['allow', 'silence_machine', 'silence_all', 'block'] as const
+export const actions = ['allow', 'silence_machine', 'silence_all', 'block', 'rule_off', 'rule_on'] as const
 export type Action = (typeof actions)[number]
 export type Decision = {
   id: number
@@ -37,7 +37,9 @@ export function openDecisions(dir: string, site: string) {
   const now = () => new Date().toISOString()
   const all = (sql: string, ...args: (string | number)[]) => db.prepare(sql).all(...args) as unknown as Decision[]
   return {
+    db,
     active: () => all('SELECT * FROM decisions WHERE undone IS NULL ORDER BY id DESC'),
+    get: (id: number) => all('SELECT * FROM decisions WHERE id = ?', id)[0],
     history: () => all('SELECT * FROM decisions ORDER BY id DESC LIMIT 500'),
     add(d: Pick<Decision, 'site' | 'action' | 'sid' | 'machine' | 'remote' | 'signature' | 'user'>): number {
       const r = db.prepare('INSERT INTO decisions (site, action, sid, machine, remote, signature, user, created) VALUES (?,?,?,?,?,?,?,?)')
@@ -52,5 +54,5 @@ export function openDecisions(dir: string, site: string) {
 /** The newest active decision that covers this alert. A decision only ever applies at its own site. */
 export function decisionFor(active: Decision[], site: string, sid: number, machine: string, remote: string): Decision | undefined {
   return active.find((d) =>
-    d.site === site && d.sid === sid && (d.action === 'silence_all' || (d.machine === machine && (d.action === 'silence_machine' || d.remote === remote))))
+    d.site === site && d.sid === sid && d.action !== 'rule_on' && (d.action === 'silence_all' || d.action === 'rule_off' || (d.machine === machine && (d.action === 'silence_machine' || d.remote === remote))))
 }

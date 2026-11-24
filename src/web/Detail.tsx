@@ -1,6 +1,6 @@
 import { Alert as Notice, Button, Stack } from '@mantine/core'
 import { type Action, type Alert, useDecide, useDetail } from './api.ts'
-import { Bandwidth, Load, Machine, NewTag, Sev, Status, bytes, sevColor, when } from './ui.tsx'
+import { Applied, Bandwidth, Load, Machine, NewTag, Sev, Status, bytes, sevColor, when } from './ui.tsx'
 
 export function Detail({ a }: { a: Alert }) {
   const q = useDetail(a)
@@ -39,10 +39,11 @@ export function Detail({ a }: { a: Alert }) {
         <Button h={40} color="teal" variant="light" loading={m.isPending} onClick={() => go('allow')}>Allow</Button>
         <Button h={40} color="red" variant="light" disabled={!a.blockable} loading={m.isPending} onClick={() => go('block')}>Request block</Button>
         <Button h={40} variant="default" loading={m.isPending} onClick={() => go('silence_machine')}>Silence for machine</Button>
-        <Button h={40} variant="default" loading={m.isPending} onClick={() => go('silence_all')}>Silence everywhere</Button>
+        <Button h={40} variant="default" loading={m.isPending} onClick={() => { if (confirm(`Turn rule ${a.sid} off in the sensor for every machine? It records nothing while off.`)) go('silence_all') }}>Silence everywhere</Button>
       </div>
-      <div className="dim">{note} <b>Decisions are recorded only for now: nothing is enforced yet.</b></div>
+      <div className="dim">{note} <b>Silencing a machine, or everywhere, changes the sensor when the Suricata plugin is connected: it then stops recording those alerts. Blocking is recorded only.</b></div>
       {m.error && <Notice color="red">{m.error.message}</Notice>}
+      {a.decision && <div><Applied d={a.decision} /></div>}
       {a.decision && <Button size="xs" variant="subtle" style={{ alignSelf: 'flex-start' }} onClick={() => m.mutate({ undo: a.decision!.id })}>Undo decision by {a.decision.user}</Button>}
     </Stack>
   )
