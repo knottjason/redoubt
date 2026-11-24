@@ -5,7 +5,7 @@ import { type Alert, useAlerts } from '../api.ts'
 import { Detail } from '../Detail.tsx'
 import { Grid, Load, Machine, NewTag, Sev, Status, when } from '../ui.tsx'
 
-const key = (a: Alert) => `${a.sid}|${a.src}|${a.dst}`
+const key = (a: Alert) => `${a.site}|${a.sid}|${a.src}|${a.dst}`
 export const alertColumns: ColumnDef<Alert, any>[] = [
   { id: 'severity', accessorKey: 'severity', header: 'Sev', cell: (c) => <Sev s={c.row.original.severity} /> },
   { id: 'signature', accessorKey: 'signature', header: 'Rule', cell: ({ row: { original: a } }) => <><div className="clip" title={a.signature}>{a.signature}</div><div className="dim" style={{ fontSize: 11 }}>{a.category} {a.isNew && <NewTag />}</div></> },

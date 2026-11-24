@@ -11,6 +11,7 @@ async function q<T>(query: string, query_params: Params = {}): Promise<T[]> {
 const iso = (c: string) => `formatDateTime(${c}, '%Y-%m-%dT%H:%i:%SZ', 'UTC')`
 
 export type AlertRow = {
+  site: string; source: string
   sid: number; signature: string; category: string; severity: number; src: string; dst: string
   hits: number; first: string; last: string; machine: string; machineName: string; remote: string; remoteName: string
   direction: 'in' | 'out' | 'internal'; firstPair: string | null; isNew: boolean; blockable: boolean
@@ -30,7 +31,7 @@ export async function alerts(hours: number): Promise<AlertRow[]> {
     const o = orient(r.src, r.dst, config.internal)
     const p = seen.get(`${r.src}|${r.dst}`)
     return {
-      ...r, hits: Number(r.hits), ...o, machineName: hostName(o.machine), remoteName: hostName(o.remote),
+      site: config.site, source: config.source, ...r, hits: Number(r.hits), ...o, machineName: hostName(o.machine), remoteName: hostName(o.remote),
       firstPair: p?.f ?? null, isNew: Boolean(p?.recent), blockable: !isInternal(o.remote, config.internal),
     }
   })
@@ -76,7 +77,7 @@ export async function machines(hours: number) {
     `SELECT src AS ip, sum(bytes_out) AS up, sum(bytes_in) AS down, count() AS conns, uniq(dst) AS dests, ${iso('max(f.ts)')} AS last
      FROM flows f WHERE f.ts > now() - toIntervalHour({hours:UInt32}) GROUP BY src ORDER BY up + down DESC LIMIT 1000`, { hours })
   return rows.filter((r) => isInternal(r.ip, config.internal)).map((r) => ({
-    ip: r.ip, name: hostName(r.ip), up: Number(r.up), down: Number(r.down), connections: Number(r.conns), destinations: Number(r.dests), last: r.last,
+    site: config.site, ip: r.ip, name: hostName(r.ip), up: Number(r.up), down: Number(r.down), connections: Number(r.conns), destinations: Number(r.dests), last: r.last,
   }))
 }
 
@@ -95,7 +96,7 @@ export async function machine(ip: string, hours: number) {
     alerts(hours),
   ])
   return {
-    ip, name: hostName(ip), bandwidth, alerts: all.filter((a) => a.machine === ip || a.remote === ip),
+    site: config.site, ip, name: hostName(ip), bandwidth, alerts: all.filter((a) => a.machine === ip || a.remote === ip),
     connections: connections.map((c) => ({ ...c, up: Number(c.up), down: Number(c.down), remoteName: hostName(c.dst), isNew: Boolean(c.recent) })),
     fresh: fresh.map((f) => ({ ...f, conns: Number(f.conns), bytes: Number(f.bytes), remoteName: hostName(f.dst) })),
   }

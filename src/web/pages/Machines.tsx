@@ -23,7 +23,7 @@ export function Machines() {
   const nav = useNavigate()
   const q = useMachines(Number(hours))
   return <div className="page"><Group justify="space-between" mb={14}><b style={{ fontSize: 18 }}>Machines</b><Group><TextInput size="xs" aria-label="Find" placeholder="Name or IP…" value={find} onChange={(e) => setFind(e.currentTarget.value)} /><Range v={hours} set={setHours} /></Group></Group>
-    <Load q={q}><Grid data={(q.data ?? []).filter((r) => `${r.name} ${r.ip}`.toLowerCase().includes(find.toLowerCase()))} columns={columns} rowKey={(r) => r.ip} onPick={(r) => nav(`/machines/${encodeURIComponent(r.ip)}`)} /></Load></div>
+    <Load q={q}><Grid data={(q.data ?? []).filter((r) => `${r.name} ${r.ip}`.toLowerCase().includes(find.toLowerCase()))} columns={columns} rowKey={(r) => `${r.site}|${r.ip}`} onPick={(r) => nav(`/machines/${encodeURIComponent(r.ip)}`)} /></Load></div>
 }
 
 type Conn = NonNullable<ReturnType<typeof useMachine>['data']>['connections'][number]
@@ -44,7 +44,7 @@ export function MachinePage() {
     <Group justify="space-between"><div><b style={{ fontSize: 18 }}>{d?.name || ip}</b> {d?.name && <span className="mono dim">{ip}</span>}</div><Range v={hours} set={setHours} /></Group>
     <Load q={q}>{d && <>
       <div className="panel" style={{ padding: 14 }}><div className="label">Bandwidth</div><Bandwidth data={d.bandwidth} h={200} /></div>
-      <div><div className="label" style={{ marginBottom: 6 }}>Alerts</div><Grid data={d.alerts} columns={alertColumns} rowKey={(a) => `${a.sid}|${a.src}|${a.dst}`} empty="No alerts for this machine." /></div>
+      <div><div className="label" style={{ marginBottom: 6 }}>Alerts</div><Grid data={d.alerts} columns={alertColumns} rowKey={(a) => `${a.site}|${a.sid}|${a.src}|${a.dst}`} empty="No alerts for this machine." /></div>
       <div><div className="label" style={{ marginBottom: 6 }}>First contacted in the last 24 h</div><Grid data={d.fresh} rowKey={(f) => f.dst} empty="Nothing new." columns={[
         { accessorKey: 'dst', header: 'Destination', cell: ({ row: { original: f } }) => <><span className="mono">{f.dst}</span> <span className="dim">{f.remoteName}</span></> },
         { accessorKey: 'first', header: 'First', cell: (c: any) => <span className="mono dim">{when(c.getValue())}</span> },

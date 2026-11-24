@@ -8,7 +8,16 @@ const need = (k: string) => {
   return v
 }
 
+const name = (k: string, fallback: string) => {
+  const v = env[k] || fallback
+  if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(v)) throw new Error(`${k} must be lower-case letters, digits and dashes`)
+  return v
+}
+
 export const config = {
+  // Where this data was seen, and by which collector. A site keeps equal private addresses at two places apart.
+  site: name('SITE', 'main'),
+  source: name('SOURCE', 'suricata'),
   port: Number(env.PORT ?? 8787),
   clickhouse: {
     url: env.CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',

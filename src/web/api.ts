@@ -36,7 +36,7 @@ export function useDecide() {
     mutationFn: async (v: { action: Action; alert: Alert } | { undo: number }): Promise<unknown> =>
       'undo' in v
         ? unwrap(client.decisions[':id'].undo.$post({ param: { id: String(v.undo) } }, { headers: { 'content-type': 'application/json' } }))
-        : unwrap(client.decisions.$post({ json: { action: v.action, sid: v.alert.sid, machine: v.alert.machine, remote: v.alert.remote, signature: v.alert.signature } })),
+        : unwrap(client.decisions.$post({ json: { site: v.alert.site, action: v.action, sid: v.alert.sid, machine: v.alert.machine, remote: v.alert.remote, signature: v.alert.signature } })),
     onSuccess: () => qc.invalidateQueries(),
   })
 }

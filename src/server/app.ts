@@ -9,7 +9,7 @@ import { config } from './config.ts'
 import * as data from './data.ts'
 import { actions, decisionFor, openDecisions } from './decisions.ts'
 
-const decisions = openDecisions(config.dataDir)
+const decisions = openDecisions(config.dataDir, config.site)
 const ip = z.union([z.ipv4(), z.ipv6()])
 const hours = z.object({ hours: z.coerce.number().int().min(1).max(720).default(24) })
 const alertKey = z.object({ sid: z.coerce.number().int().positive(), src: ip, dst: ip })
@@ -32,7 +32,7 @@ const api = new Hono<Env>()
   .get('/alerts', zValidator('query', hours), async (c) => {
     const active = decisions.active()
     const rows = await data.alerts(c.req.valid('query').hours)
-    return c.json(rows.map((r) => ({ ...r, decision: decisionFor(active, r.sid, r.machine, r.remote) ?? null })))
+    return c.json(rows.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null })))
   })
   .get('/alerts/detail', zValidator('query', alertKey), async (c) => {
     const { sid, src, dst } = c.req.valid('query')
@@ -42,11 +42,11 @@ const api = new Hono<Env>()
   .get('/machines/:ip', zValidator('param', z.object({ ip })), zValidator('query', hours), async (c) => {
     const active = decisions.active()
     const m = await data.machine(c.req.valid('param').ip, c.req.valid('query').hours)
-    return c.json({ ...m, alerts: m.alerts.map((r) => ({ ...r, decision: decisionFor(active, r.sid, r.machine, r.remote) ?? null })) })
+    return c.json({ ...m, alerts: m.alerts.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null })) })
   })
   .get('/decisions', (c) => c.json(decisions.history()))
   .post('/decisions', zValidator('json', z.object({
-    action: z.enum(actions), sid: z.number().int().positive(), machine: ip, remote: ip, signature: z.string().min(1).max(300),
+    site: z.literal(config.site), action: z.enum(actions), sid: z.number().int().positive(), machine: ip, remote: ip, signature: z.string().min(1).max(300),
   })), (c) => {
     const d = c.req.valid('json')
     if (d.action === 'block' && isInternal(d.remote, config.internal)) return c.json({ error: 'Internal addresses are never blocked' }, 400)

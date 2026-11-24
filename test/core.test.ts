@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { test } from 'node:test'
 import { isInternal, orient, parseNetworks } from '../src/shared/net.ts'
 import { decisionFor, openDecisions } from '../src/server/decisions.ts'
@@ -18,18 +22,30 @@ test('orientation puts our side first', () => {
 })
 
 test('decisions cover what they should, and undo works', () => {
-  const d = openDecisions(':memory:')
-  const base = { sid: 1, machine: '192.0.2.9', remote: '203.0.113.5', signature: 'Example', user: 'example' }
+  const d = openDecisions(':memory:', 'a')
+  const base = { site: 'a', sid: 1, machine: '192.0.2.9', remote: '203.0.113.5', signature: 'Example', user: 'example' }
   const id = d.add({ ...base, action: 'allow' })
-  assert.equal(decisionFor(d.active(), 1, '192.0.2.9', '203.0.113.5')?.action, 'allow')
-  assert.equal(decisionFor(d.active(), 1, '192.0.2.9', '203.0.113.6'), undefined)
+  assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.9', '203.0.113.5')?.action, 'allow')
+  assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.9', '203.0.113.6'), undefined)
   assert.equal(d.undo(id, 'example'), true)
   assert.equal(d.undo(id, 'example'), false)
   d.add({ ...base, action: 'silence_machine' })
-  assert.equal(decisionFor(d.active(), 1, '192.0.2.9', '203.0.113.6')?.action, 'silence_machine')
-  assert.equal(decisionFor(d.active(), 1, '192.0.2.10', '203.0.113.6'), undefined)
+  assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.9', '203.0.113.6')?.action, 'silence_machine')
+  assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.10', '203.0.113.6'), undefined)
   d.add({ ...base, action: 'silence_all' })
-  assert.equal(decisionFor(d.active(), 1, '192.0.2.10', '203.0.113.6')?.action, 'silence_all')
-  assert.equal(decisionFor(d.active(), 2, '192.0.2.9', '203.0.113.5'), undefined)
+  assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.10', '203.0.113.6')?.action, 'silence_all')
+  assert.equal(decisionFor(d.active(), 'a', 2, '192.0.2.9', '203.0.113.5'), undefined)
+  assert.equal(decisionFor(d.active(), 'b', 1, '192.0.2.9', '203.0.113.5'), undefined)
   assert.equal(d.history().length, 3)
+})
+
+test('decisions made before sites existed move to this site, once', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'redoubt-'))
+  const old = new DatabaseSync(join(dir, 'decisions.sqlite'))
+  old.exec(`CREATE TABLE decisions (id INTEGER PRIMARY KEY, action TEXT NOT NULL, sid INTEGER NOT NULL, machine TEXT NOT NULL, remote TEXT NOT NULL,
+    signature TEXT NOT NULL, user TEXT NOT NULL, created TEXT NOT NULL, undone TEXT, undone_by TEXT);
+    INSERT INTO decisions (action, sid, machine, remote, signature, user, created) VALUES ('allow', 1, '192.0.2.9', '203.0.113.5', 'x', 'example', 'now')`)
+  old.close()
+  assert.equal(openDecisions(dir, 'a').history()[0]?.site, 'a')
+  assert.equal(openDecisions(dir, 'b').history()[0]?.site, 'a')
 })
