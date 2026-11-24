@@ -38,7 +38,7 @@ export function wants(d: Pick<Decision, 'action' | 'sid' | 'machine' | 'remote' 
     case 'rule_on': return { kind: 'rule.enable', sid: d.sid, label }
     case 'silence_machine': return { kind: 'rule.silence', sid: d.sid, machine: d.machine, label }
     case 'block': return direction === 'in' ? { kind: 'block.remote', sid: d.sid, remote: d.remote, label } : { kind: 'block.pair', sid: d.sid, machine: d.machine, remote: d.remote, label }
-    case 'allow': return undefined
+    case 'allow': case 'allow_machine': case 'allow_all': return undefined
   }
 }
 

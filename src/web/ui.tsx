@@ -25,8 +25,8 @@ export function Sev({ s }: { s: number }) {
   return <Badge radius={4} size="sm" styles={{ root: { color: c, background: b, minWidth: 46 } }}>{t}</Badge>
 }
 const status = {
-  allow: ['Allowed', '#6fe0ad', '#12291f'], silence_machine: ['Silenced · machine', '#9aa4b2', '#1b222b'],
-  silence_all: ['Silenced · all', '#9aa4b2', '#1b222b'], rule_off: ['Rule off', '#9aa4b2', '#1b222b'], rule_on: ['Rule on', '#6fe0ad', '#12291f'], block: ['Block requested', '#ff8a8a', '#2a1416'],
+  allow: ['Allowed', '#6fe0ad', '#12291f'], allow_machine: ['Allowed · machine', '#6fe0ad', '#12291f'], silence_machine: ['Silenced · machine', '#9aa4b2', '#1b222b'],
+  allow_all: ['Allowed · all', '#6fe0ad', '#12291f'], silence_all: ['Silenced · all', '#9aa4b2', '#1b222b'], rule_off: ['Rule off', '#9aa4b2', '#1b222b'], rule_on: ['Rule on', '#6fe0ad', '#12291f'], block: ['Block requested', '#ff8a8a', '#2a1416'],
 } as const
 export function Status({ d }: { d: Alert['decision'] }) {
   const [t, c, b] = d ? status[d.action] : (['Open', '#e6e9ee', '#1b222b'] as const)

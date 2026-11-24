@@ -29,6 +29,11 @@ test('decisions cover what they should, and undo works', () => {
   assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.9', '203.0.113.6'), undefined)
   assert.equal(d.undo(id, 'example'), true)
   assert.equal(d.undo(id, 'example'), false)
+  const m = d.add({ ...base, sid: 5, action: 'allow_machine' })
+  assert.equal(decisionFor(d.active(), 'a', 5, '192.0.2.9', '203.0.113.99')?.action, 'allow_machine')
+  assert.equal(decisionFor(d.active(), 'a', 5, '192.0.2.10', '203.0.113.99'), undefined)
+  d.undo(m, 'example')
+  d.undo(d.add({ ...base, sid: 6, action: 'allow_all' }), 'example')
   d.add({ ...base, action: 'silence_machine' })
   assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.9', '203.0.113.6')?.action, 'silence_machine')
   assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.10', '203.0.113.6'), undefined)
@@ -36,7 +41,7 @@ test('decisions cover what they should, and undo works', () => {
   assert.equal(decisionFor(d.active(), 'a', 1, '192.0.2.10', '203.0.113.6')?.action, 'silence_all')
   assert.equal(decisionFor(d.active(), 'a', 2, '192.0.2.9', '203.0.113.5'), undefined)
   assert.equal(decisionFor(d.active(), 'b', 1, '192.0.2.9', '203.0.113.5'), undefined)
-  assert.equal(d.history().length, 3)
+  assert.equal(d.history().length, 5)
 })
 
 test('decisions made before sites existed move to this site, once', () => {

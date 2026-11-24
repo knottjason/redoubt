@@ -37,14 +37,14 @@ export function useAct<V>(f: (v: V) => Promise<unknown>) {
   const qc = useQueryClient()
   return useMutation({ mutationFn: f, onSuccess: () => qc.invalidateQueries() })
 }
-export const useToggleRule = () => useAct((v: { sid: number; on: boolean; signature: string }) => unwrap(client.ruleset[':sid'].$post({ param: { sid: String(v.sid) }, json: { on: v.on, signature: v.signature } })))
+export const useToggleRule = () => useAct((v: { sid: number; on: boolean; signature: string; machine?: string }) => unwrap(client.ruleset[':sid'].$post({ param: { sid: String(v.sid) }, json: { on: v.on, signature: v.signature, ...(v.machine && { machine: v.machine }) } })))
 export const useDescribe = () => useMutation({ mutationFn: (v: { url: string; key: string }) => unwrap(client.plugins.describe.$post({ json: v })) })
 export const useAddPlugin = () => useAct((v: { url: string; key: string }) => unwrap(client.plugins.$post({ json: v })))
 export const useRemovePlugin = () => useAct((id: number) => unwrap(client.plugins[':id'].remove.$post({ param: { id: String(id) } }, json)))
 export const useHistory = () => useQuery({ queryKey: ['decisions'], queryFn: () => unwrap(client.decisions.$get()), refetchInterval: 3_000 })
 
 export type Alert = NonNullable<ReturnType<typeof useAlerts>['data']>[number]
-export type Action = 'allow' | 'silence_machine' | 'silence_all' | 'block'
+export type Action = 'allow' | 'allow_machine' | 'allow_all' | 'silence_machine' | 'silence_all' | 'block'
 
 export function useDecide() {
   const qc = useQueryClient()

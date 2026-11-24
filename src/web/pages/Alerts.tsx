@@ -17,7 +17,7 @@ export const alertColumns: ColumnDef<Alert, any>[] = [
   { id: 'status', accessorFn: (a) => a.decision?.action ?? '', header: 'Status', cell: ({ row: { original: a } }) => <Status d={a.decision} /> },
 ]
 
-const filters = { Open: (a: Alert) => !a.decision, Allowed: (a: Alert) => a.decision?.action === 'allow', Silenced: (a: Alert) => !!a.decision?.action.startsWith('silence'), Blocked: (a: Alert) => a.decision?.action === 'block' }
+const filters = { Open: (a: Alert) => !a.decision, Allowed: (a: Alert) => !!a.decision?.action.startsWith('allow'), Silenced: (a: Alert) => !!a.decision?.action.startsWith('silence'), Blocked: (a: Alert) => a.decision?.action === 'block' }
 
 export function Alerts() {
   const [hours, setHours] = useState('24')

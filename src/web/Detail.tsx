@@ -1,6 +1,11 @@
 import { Alert as Notice, Button, Stack } from '@mantine/core'
+import type { ReactNode } from 'react'
 import { type Action, type Alert, useDecide, useDetail } from './api.ts'
 import { Applied, Bandwidth, Load, Machine, NewTag, Sev, Status, bytes, sevColor, when } from './ui.tsx'
+
+function Choice({ title, note, children }: { title: string; note: string; children: ReactNode }) {
+  return <div><div className="label" style={{ marginBottom: 6 }}>{title} <span style={{ textTransform: 'none', letterSpacing: 0 }}>· {note}</span></div><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 }}>{children}</div></div>
+}
 
 export function Detail({ a }: { a: Alert }) {
   const q = useDetail(a)
@@ -34,14 +39,18 @@ export function Detail({ a }: { a: Alert }) {
         </div>
         <div><div className="label">Payload</div><div className="inset dim">Not collected yet.</div></div>
       </>}</Load>
-      <div className="label">Decide</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <Button h={40} color="teal" variant="light" loading={m.isPending} onClick={() => go('allow')}>Allow</Button>
-        <Button h={40} color="red" variant="light" disabled={!a.blockable} loading={m.isPending} onClick={() => go('block')}>Request block</Button>
-        <Button h={40} variant="default" loading={m.isPending} onClick={() => go('silence_machine')}>Silence for machine</Button>
-        <Button h={40} variant="default" loading={m.isPending} onClick={() => { if (confirm(`Turn rule ${a.sid} off in the sensor for every machine? It records nothing while off.`)) go('silence_all') }}>Silence everywhere</Button>
-      </div>
-      <div className="dim">{note} <b>Silencing a machine, or everywhere, changes the sensor when the Suricata plugin is connected: it then stops recording those alerts. Blocking is recorded only.</b></div>
+      <Choice title="Allow" note="Leaves Open. The sensor keeps a record.">
+        <Button h={40} px={6} color="teal" variant="light" loading={m.isPending} onClick={() => go('allow')}>This pair</Button>
+        <Button h={40} px={6} color="teal" variant="light" loading={m.isPending} onClick={() => go('allow_machine')}>This host only</Button>
+        <Button h={40} px={6} color="teal" variant="light" loading={m.isPending} onClick={() => go('allow_all')}>Everyone</Button>
+      </Choice>
+      <Choice title="Turn the rule off" note="The sensor stops recording it.">
+        <Button h={40} px={6} variant="default" loading={m.isPending} onClick={() => go('silence_machine')}>This host only</Button>
+        <Button h={40} px={6} variant="default" loading={m.isPending} onClick={() => { if (confirm(`Turn rule ${a.sid} off in the sensor for every machine? It records nothing while off.`)) go('silence_all') }}>Everyone</Button>
+      </Choice>
+      {q.data?.samples[0]?.dport === 53 && <Notice color="yellow">This is a DNS lookup, so "{who}" may be your DNS server asking for someone else. A choice for this host would then cover every machine behind it.</Notice>}
+      <Choice title="Block" note="Recorded only."><Button h={40} px={6} color="red" variant="light" disabled={!a.blockable} loading={m.isPending} onClick={() => go('block')}>Request block</Button></Choice>
+      <div className="dim">{note} Host choices follow the address, so give that host a fixed one.</div>
       {m.error && <Notice color="red">{m.error.message}</Notice>}
       {a.decision && <div><Applied d={a.decision} /></div>}
       {a.decision && <Button size="xs" variant="subtle" style={{ alignSelf: 'flex-start' }} onClick={() => m.mutate({ undo: a.decision!.id })}>Undo decision by {a.decision.user}</Button>}

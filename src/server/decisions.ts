@@ -2,7 +2,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 
-export const actions = ['allow', 'silence_machine', 'silence_all', 'block', 'rule_off', 'rule_on'] as const
+export const actions = ['allow', 'allow_machine', 'allow_all', 'silence_machine', 'silence_all', 'block', 'rule_off', 'rule_on'] as const
 export type Action = (typeof actions)[number]
 export type Decision = {
   id: number
@@ -54,5 +54,5 @@ export function openDecisions(dir: string, site: string) {
 /** The newest active decision that covers this alert. A decision only ever applies at its own site. */
 export function decisionFor(active: Decision[], site: string, sid: number, machine: string, remote: string): Decision | undefined {
   return active.find((d) =>
-    d.site === site && d.sid === sid && d.action !== 'rule_on' && (d.action === 'silence_all' || d.action === 'rule_off' || (d.machine === machine && (d.action === 'silence_machine' || d.remote === remote))))
+    d.site === site && d.sid === sid && d.action !== 'rule_on' && (d.action === 'silence_all' || d.action === 'allow_all' || d.action === 'rule_off' || (d.machine === machine && (d.action === 'silence_machine' || d.action === 'allow_machine' || d.remote === remote))))
 }

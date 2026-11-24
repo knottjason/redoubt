@@ -5,7 +5,7 @@ import { getConnInfo } from '@hono/node-server/conninfo'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { isInternal, orient } from '../shared/net.ts'
-import { config } from './config.ts'
+import { config, hostName } from './config.ts'
 import * as data from './data.ts'
 import { actions, decisionFor, openDecisions } from './decisions.ts'
 import { openPlugins, wants } from './plugins.ts'
@@ -94,7 +94,7 @@ const api = new Hono<Env>()
     return c.json(decisions.history().map((d) => ({ ...d, applied: s.get(d.id) ?? null })))
   })
   .post('/decisions', zValidator('json', z.object({
-    site: z.literal(config.site), action: z.enum(['allow', 'silence_machine', 'silence_all', 'block']), sid: z.number().int().positive(), src: ip, dst: ip, signature: z.string().min(1).max(300),
+    site: z.literal(config.site), action: z.enum(['allow', 'allow_machine', 'allow_all', 'silence_machine', 'silence_all', 'block']), sid: z.number().int().positive(), src: ip, dst: ip, signature: z.string().min(1).max(300),
   })), (c) => {
     const { src, dst, ...d } = c.req.valid('json')
     const { machine, remote, direction } = orient(src, dst, config.internal)
@@ -111,12 +111,23 @@ const api = new Hono<Env>()
       return c.json({ error: (e as Error).message }, 502)
     }
     const s = plugins.states()
+    const hostOnly = decisions.active().filter((d) => d.site === config.site && d.action === 'silence_machine')
     const own = new Map(decisions.active().filter((d) => d.site === config.site && ['rule_off', 'rule_on', 'silence_all'].includes(d.action)).reverse().map((d) => [d.sid, { ...d, applied: s.get(d.id) ?? null }]))
-    return c.json(r && { ...r, rows: r.rows.map((x) => ({ ...x, decision: own.get(x.sid) ?? null })) })
+    return c.json(r && { ...r, rows: r.rows.map((x) => ({
+      ...x, decision: own.get(x.sid) ?? null,
+      hosts: hostOnly.filter((d) => d.sid === x.sid).map((d) => ({ ...d, name: hostName(d.machine), applied: s.get(d.id) ?? null })),
+    })) })
   })
-  .post('/ruleset/:sid', zValidator('param', z.object({ sid: z.coerce.number().int().positive() })), zValidator('json', z.object({ on: z.boolean(), signature: z.string().min(1).max(300) })), (c) => {
+  .post('/ruleset/:sid', zValidator('param', z.object({ sid: z.coerce.number().int().positive() })), zValidator('json', z.object({ on: z.boolean(), signature: z.string().min(1).max(300), machine: ip.optional() })), (c) => {
     const { sid } = c.req.valid('param')
-    const { on, signature } = c.req.valid('json')
+    const { on, signature, machine } = c.req.valid('json')
+    if (machine !== undefined) {
+      if (on) return c.json({ error: 'A rule can be turned off for one machine, not on' }, 400)
+      if (!isInternal(machine, config.internal)) return c.json({ error: 'That is not one of your machines' }, 400)
+      if (!plugins.handles(config.site, 'rule.silence')) return c.json({ error: 'No plugin manages rules at this site' }, 409)
+      if (decisions.active().some((d) => d.site === config.site && d.sid === sid && d.machine === machine && d.action === 'silence_machine')) return c.json({ error: 'Already off for that machine' }, 409)
+      return c.json(record({ site: config.site, action: 'silence_machine', sid, machine, remote: '', signature, user: c.get('user') }), 201)
+    }
     if (!plugins.handles(config.site, on ? 'rule.enable' : 'rule.disable')) return c.json({ error: 'No plugin manages rules at this site' }, 409)
     if (decisions.active().some((d) => d.site === config.site && d.sid === sid && ['rule_off', 'rule_on', 'silence_all'].includes(d.action))) return c.json({ error: 'Undo the earlier decision on this rule first' }, 409)
     return c.json(record({ site: config.site, action: on ? 'rule_on' : 'rule_off', sid, machine: '', remote: '', signature, user: c.get('user') }), 201)
