@@ -2,7 +2,7 @@
 
 One screen for a home network: Suricata alerts with a decision to make, and every machine's bandwidth, connections and "have we seen this before?".
 
-Early days. Overview, Alerts, Machines, Rules, History and Plugins work. A decision with no plugin behind it is recorded only.
+Early days. Overview, Alerts, Machines, Rules, History, Plugins and Agent work. A decision with no plugin behind it is recorded only.
 
 TypeScript, Hono, React, react-query, Mantine, TanStack Table. Reads ClickHouse (read-only), keeps decisions in SQLite.
 
@@ -12,6 +12,10 @@ TypeScript, Hono, React, react-query, Mantine, TanStack Table. Reads ClickHouse 
     npm ci && npm run build && npm start
 
 Put it behind a reverse proxy that signs people in and sets `Remote-User`, and list that proxy in `TRUSTED_PROXIES`. Everything else is refused.
+
+## Agent
+
+An assistant on the Agent page that investigates with the same tools other agents can use over MCP, and asks before changing anything. Any provider (Anthropic, OpenAI, Google, xAI, or a local OpenAI-compatible model such as Ollama). See [docs/agent.md](docs/agent.md).
 
 ## Plugins
 
