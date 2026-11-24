@@ -12,7 +12,7 @@ import { namesFrom, openPlugins } from './plugins.ts'
 
 const decisions = openDecisions(config.dataDir, config.site)
 const plugins = openPlugins(decisions.db)
-export const service = createService(decisions, plugins, config)
+const service = createService(decisions, plugins, config)
 if (config.runQueue) {
   setInterval(() => void plugins.deliverDue(), 2_000).unref()
   setInterval(() => void plugins.checkAll(), 60_000).unref()
@@ -24,6 +24,40 @@ if (config.runQueue) {
 const withState = <T extends { decision: { id: number } | null }>(rows: T[]) => {
   const s = plugins.states()
   return rows.map((r) => ({ ...r, decision: r.decision && { ...r.decision, applied: s.get(r.decision.id) ?? null } }))
+}
+const decided = (rows: data.AlertRow[]) => {
+  const active = decisions.active()
+  return withState(rows.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null })))
+}
+/** Everything the routes do, for anything else inside the server that needs the same answers and the same checks. */
+export const services = {
+  ...service,
+  alerts: async (hours: number) => decided(await data.alerts(hours)),
+  overview: async (hours: number) => {
+    const { alerts, ...o } = await data.overview(hours)
+    return { ...o, open: decided(alerts).filter((r) => !r.decision) }
+  },
+  machine: async (ip: string, hours: number) => {
+    const m = await data.machine(ip, hours)
+    return { ...m, alerts: decided(m.alerts) }
+  },
+  history: () => {
+    const s = plugins.states()
+    return decisions.history().map((d) => ({ ...d, applied: s.get(d.id) ?? null }))
+  },
+  ruleset: async (query: { find: string; state: 'all' | 'on' | 'off'; offset: number }) => {
+    const r = await plugins.rules(config.site, { ...query, limit: 100 })
+    if (!r) return null
+    const s = plugins.states()
+    const here = decisions.active().filter((d) => d.site === config.site)
+    const own = new Map(here.filter((d) => ruleActions.includes(d.action)).reverse().map((d) => [d.sid, { ...d, applied: s.get(d.id) ?? null }]))
+    return { ...r, rows: r.rows.map((x) => ({
+      ...x, decision: own.get(x.sid) ?? null,
+      hosts: here.filter((d) => d.sid === x.sid && d.action === 'silence_machine').map((d) => ({ ...d, name: hostName(d.machine), applied: s.get(d.id) ?? null })),
+    })) }
+  },
+  devices: () => plugins.devices(config.site),
+  plugins: () => plugins.list(),
 }
 const pluginUrl = z.url({ protocol: /^https?$/ }).max(200)
 const pluginKey = z.string().min(32).max(200)
@@ -46,31 +80,17 @@ const api = new Hono<Env>()
     await next()
   })
   .get('/summary', async (c) => c.json({ ...(await data.summary()), user: c.get('user') }))
-  .get('/alerts', zValidator('query', hours), async (c) => {
-    const active = decisions.active()
-    const rows = await data.alerts(c.req.valid('query').hours)
-    return c.json(withState(rows.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null }))))
-  })
+  .get('/alerts', zValidator('query', hours), async (c) => c.json(await services.alerts(c.req.valid('query').hours)))
   .get('/alerts/detail', zValidator('query', alertKey), async (c) => {
     const { sid, src, dst } = c.req.valid('query')
     return c.json(await data.alertDetail(sid, src, dst))
   })
-  .get('/overview', zValidator('query', hours), async (c) => {
-    const active = decisions.active()
-    const o = await data.overview(c.req.valid('query').hours)
-    return c.json({ ...o, alerts: undefined, open: withState(o.alerts.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null }))).filter((r) => !r.decision) })
-  })
+  .get('/overview', zValidator('query', hours), async (c) => c.json(await services.overview(c.req.valid('query').hours)))
   .get('/rules', zValidator('query', hours), async (c) => c.json(await data.rules(c.req.valid('query').hours)))
   .get('/machines', zValidator('query', hours), async (c) => c.json(await data.machines(c.req.valid('query').hours)))
-  .get('/machines/:ip', zValidator('param', z.object({ ip })), zValidator('query', hours), async (c) => {
-    const active = decisions.active()
-    const m = await data.machine(c.req.valid('param').ip, c.req.valid('query').hours)
-    return c.json({ ...m, alerts: withState(m.alerts.map((r) => ({ ...r, decision: decisionFor(active, r.site, r.sid, r.machine, r.remote) ?? null }))) })
-  })
-  .get('/decisions', (c) => {
-    const s = plugins.states()
-    return c.json(decisions.history().map((d) => ({ ...d, applied: s.get(d.id) ?? null })))
-  })
+  .get('/machines/:ip', zValidator('param', z.object({ ip })), zValidator('query', hours), async (c) =>
+    c.json(await services.machine(c.req.valid('param').ip, c.req.valid('query').hours)))
+  .get('/decisions', (c) => c.json(services.history()))
   .post('/decisions', zValidator('json', z.object({
     site: z.literal(config.site), action: z.enum(['allow', 'allow_machine', 'allow_all', 'silence_machine', 'silence_all', 'block']), sid: z.number().int().positive(), src: ip, dst: ip, signature: z.string().min(1).max(300),
   })), (c) => {
@@ -80,26 +100,14 @@ const api = new Hono<Env>()
   .post('/decisions/:id/undo', zValidator('param', z.object({ id: z.coerce.number().int().positive() })), (c) =>
     service.undo(c.req.valid('param').id, c.get('user')) ? c.json({ ok: true }) : c.json({ error: 'Already undone' }, 404))
   .get('/ruleset', zValidator('query', z.object({ find: z.string().max(100).default(''), state: z.enum(['all', 'on', 'off']).default('all'), offset: z.coerce.number().int().min(0).default(0) })), async (c) => {
-    let r
-    try {
-      r = await plugins.rules(config.site, { ...c.req.valid('query'), limit: 100 })
-    } catch (e) {
-      return c.json({ error: (e as Error).message }, 502)
-    }
-    const s = plugins.states()
-    const hostOnly = decisions.active().filter((d) => d.site === config.site && d.action === 'silence_machine')
-    const own = new Map(decisions.active().filter((d) => d.site === config.site && ruleActions.includes(d.action)).reverse().map((d) => [d.sid, { ...d, applied: s.get(d.id) ?? null }]))
-    return c.json(r && { ...r, rows: r.rows.map((x) => ({
-      ...x, decision: own.get(x.sid) ?? null,
-      hosts: hostOnly.filter((d) => d.sid === x.sid).map((d) => ({ ...d, name: hostName(d.machine), applied: s.get(d.id) ?? null })),
-    })) })
+    try { return c.json(await services.ruleset(c.req.valid('query'))) } catch (e) { return c.json({ error: (e as Error).message }, 502) }
   })
   .post('/ruleset/:sid', zValidator('param', z.object({ sid: z.coerce.number().int().positive() })), zValidator('json', z.object({ on: z.boolean(), signature: z.string().min(1).max(300), machine: ip.optional() })), (c) => {
     const r = service.setRule({ ...c.req.valid('param'), ...c.req.valid('json'), user: c.get('user') })
     return 'error' in r ? c.json({ error: r.error }, r.status) : c.json(r, 201)
   })
-  .get('/devices', async (c) => c.json(await plugins.devices(config.site)))
-  .get('/plugins', (c) => c.json(plugins.list()))
+  .get('/devices', async (c) => c.json(await services.devices()))
+  .get('/plugins', (c) => c.json(services.plugins()))
   .post('/plugins/describe', zValidator('json', z.object({ url: pluginUrl, key: pluginKey })), async (c) => {
     const { url, key } = c.req.valid('json')
     try { return c.json(await plugins.describe(url, key)) } catch (e) { return c.json({ error: (e as Error).message }, 502) }

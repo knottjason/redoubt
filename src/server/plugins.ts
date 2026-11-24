@@ -19,7 +19,16 @@ const applied = z.object({ results: z.array(z.object({ id: z.string(), ok: z.boo
 const listed = z.object({ instance: z.string(), revision: z.number(), ids: z.array(z.string()), healthy: z.boolean(), message: z.string().max(400) })
 const ruleList = z.object({ total: z.number(), on: z.number(), off: z.number(), rows: z.array(z.object({ sid: z.number(), msg: z.string(), classtype: z.string(), group: z.string(), severity: z.number(), on: z.boolean() })) })
 
+/** Every action is safe to repeat, so a connection that had gone stale (say, the plugin restarted) is worth one more try. */
 export async function call<T>(p: { url: string; key: string }, action: string, body: unknown, shape: z.ZodType<T>, timeout = 15_000): Promise<T> {
+  try {
+    return await once(p, action, body, shape, timeout)
+  } catch (e) {
+    if (!(e instanceof TypeError && e.message === 'fetch failed')) throw e
+    return once(p, action, body, shape, timeout)
+  }
+}
+async function once<T>(p: { url: string; key: string }, action: string, body: unknown, shape: z.ZodType<T>, timeout: number): Promise<T> {
   const path = prefix + action
   const text = JSON.stringify(body)
   const time = String(Date.now())
