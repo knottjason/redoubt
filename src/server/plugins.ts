@@ -11,7 +11,7 @@ export type EntryRow = { id: string; plugin: number; decision: number; kind: Kin
 const describe = z.object({ name: z.string().min(1).max(60), version: z.string().max(40), kinds: z.array(z.enum(kinds)), rules: z.boolean(), devices: z.boolean().default(false) })
 const nul = z.string().max(200).nullable()
 const devicesReply = z.object({
-  facts: z.array(z.object({ router: z.string().max(60), source: z.enum(['dhcp', 'arp', 'dns', 'bridge', 'neighbor']), ref: z.string().max(60), hash: z.string().max(64), mac: nul, random_mac: z.boolean(), ip: nul, comment: nul, hostname: nul,
+  facts: z.array(z.object({ router: z.string().max(60), source: z.enum(['dhcp', 'arp', 'dns', 'bridge', 'neighbor', 'self']), ref: z.string().max(60), hash: z.string().max(64), mac: nul, random_mac: z.boolean(), ip: nul, comment: nul, hostname: nul,
     dns: z.array(z.string().max(200)).max(50), static: z.boolean(), interface: nul, vlan: z.number().int().min(0).max(4095).nullable().optional(), seen: nul })).max(20_000),
   errors: z.array(z.object({ router: z.string(), error: z.string() })),
 })

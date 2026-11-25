@@ -17,8 +17,8 @@ export type RulesReply = { total: number; on: number; off: number; rows: RuleRow
 /** One thing one source on one router says about a device. Plugins report what they see; Redoubt decides which facts are the same device. */
 export type Fact = {
   router: string
-  /** `bridge`: a switch's MAC table, so `interface` is the port. `neighbor`: LLDP/MNDP/CDP, so `hostname` is what the neighbour calls itself. */
-  source: 'dhcp' | 'arp' | 'dns' | 'bridge' | 'neighbor'
+  /** `bridge`: a switch's MAC table, so `interface` is the port. `neighbor`: LLDP/MNDP/CDP, so `hostname` is what the neighbour calls itself. `self`: one of the router's own interfaces (a MAC) or addresses (an IP), with `hostname` its identity. */
+  source: 'dhcp' | 'arp' | 'dns' | 'bridge' | 'neighbor' | 'self'
   /** Opaque handle for this record on that router. Not stable across routers. */
   ref: string
   /** Changes whenever anything below changes, so a rename on the router is noticed. */

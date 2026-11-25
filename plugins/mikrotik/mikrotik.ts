@@ -119,7 +119,8 @@ export function seconds(s = ''): number | null {
   for (const m of s.matchAll(/(\d+)([wdhms])(?!s)/g)) n += Number(m[1]) * unit[m[2]!]!
   return n
 }
-const mac = (s?: string) => (s && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(s) ? s.toUpperCase() : null)
+/** A MAC that names one device: well formed, not multicast or broadcast (the group bit), not all zeros. */
+const mac = (s?: string) => (s && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(s) && !(parseInt(s.slice(0, 2), 16) & 1) && !/^(00:){5}00$/.test(s) ? s.toUpperCase() : null)
 const clean = (s?: string) => (s ? s.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120) || null : null)
 
 /** `trouble` collects sources that exist but could not be read (a login missing a policy, say), without failing the rest. */
@@ -129,7 +130,8 @@ export async function look(router: string, r: Rest, now = Date.now(), trouble: s
     if (!/no such command|not found|\b404\b/i.test(e.message)) trouble.push(`${path}: ${e.message}`)
     return [] as Item[]
   })
-  const [leases, arps, dns, hosts, neighbors] = await Promise.all([r.get('ip/dhcp-server/lease'), r.get('ip/arp'), r.get('ip/dns/static'), maybe('interface/bridge/host'), maybe('ip/neighbor')])
+  const [leases, arps, dns, hosts, neighbors, ifaces, addresses, identity] = await Promise.all([r.get('ip/dhcp-server/lease'), r.get('ip/arp'), r.get('ip/dns/static'),
+    maybe('interface/bridge/host'), maybe('ip/neighbor'), maybe('interface'), maybe('ip/address'), maybe('system/identity')])
   const make = (source: Fact['source'], ref: string, f: Partial<Fact>): Fact => {
     const m = f.mac ?? null
     const x = { router, source, ref, mac: m, random_mac: m ? (parseInt(m.slice(0, 2), 16) & 2) === 2 : false, ip: null, comment: null, hostname: null, dns: [], static: false, interface: null, ...f }
@@ -150,6 +152,13 @@ export async function look(router: string, r: Rest, now = Date.now(), trouble: s
     if (h.local === 'true' || h.invalid === 'true' || h.disabled === 'true' || !mac(h['mac-address'])) continue
     const vid = Number(h.vid)
     out.push(make('bridge', h['.id']!, { mac: mac(h['mac-address']), interface: h['on-interface'] ?? h.interface ?? null, vlan: Number.isInteger(vid) && vid > 0 ? vid : null, seen: new Date(now).toISOString() }))
+  }
+  // The router itself: its own interfaces and addresses, so Redoubt shows them as one device and not as strays.
+  const self = clean((Array.isArray(identity) ? identity[0] : (identity as unknown as Item | undefined))?.name) ?? router
+  for (const i of ifaces) if (i.disabled !== 'true' && mac(i['mac-address'])) out.push(make('self', i['.id']!, { mac: mac(i['mac-address']), interface: clean(i.name), hostname: self }))
+  for (const a of addresses) {
+    const ip = a.address?.split('/')[0]
+    if (a.disabled !== 'true' && a.invalid !== 'true' && ip) out.push(make('self', a['.id']!, { ip, interface: clean(a.interface), hostname: self }))
   }
   for (const n of neighbors) {
     if (!mac(n['mac-address'])) continue

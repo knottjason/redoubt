@@ -11,7 +11,7 @@ import type { Entry } from '../src/shared/plugin.ts'
 
 function fake() {
   let n = 0
-  const t: Record<string, Item[]> = { 'ip/firewall/raw': [], 'ip/firewall/filter': [], 'ip/firewall/address-list': [], 'ip/firewall/connection': [], 'ip/dhcp-server/lease': [], 'ip/arp': [], 'ip/dns/static': [], 'interface/bridge/host': [], 'ip/neighbor': [] }
+  const t: Record<string, Item[]> = { 'ip/firewall/raw': [], 'ip/firewall/filter': [], 'ip/firewall/address-list': [], 'ip/firewall/connection': [], 'ip/dhcp-server/lease': [], 'ip/arp': [], 'ip/dns/static': [], 'interface/bridge/host': [], 'ip/neighbor': [], 'interface': [], 'ip/address': [], 'system/identity': [] }
   const put = (p: string, i: Item) => { t[p]!.push({ '.id': `*${(++n).toString(16)}`, disabled: 'false', ...i }) }
   for (const s of scaffold) put(s.path, { ...s.item, comment: 'redoubt' })
   // Someone else's entries, which must survive everything.
@@ -106,6 +106,7 @@ test('devices: a switch reports MACs per port and its neighbours; local and inva
   f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:11', 'on-interface': 'bridge', local: 'true' })
   f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:12', 'on-interface': 'ether3', invalid: 'true' })
   f.put('ip/neighbor', { 'mac-address': '00:00:5E:00:53:13', interface: 'ether17,bridge', identity: 'ap1', platform: 'MikroTik', board: 'cAP', address: '192.0.2.13' })
+  f.put('interface/bridge/host', { 'mac-address': '01:00:5E:00:00:FB', 'on-interface': 'ether1' })
   const a = await look('sw', f.r)
   assert.deepEqual(a.map((x) => [x.source, x.mac, x.interface, x.vlan ?? null, x.hostname, x.comment, x.ip]), [
     ['bridge', '00:00:5E:00:53:10', 'ether20', 1, null, null, null], ['neighbor', '00:00:5E:00:53:13', 'ether17', null, 'ap1', 'MikroTik cAP', '192.0.2.13']])
@@ -114,6 +115,17 @@ test('devices: a switch reports MACs per port and its neighbours; local and inva
   const trouble: string[] = []
   assert.deepEqual(await look('fw', broken, Date.now(), trouble), [])
   assert.deepEqual(trouble, ['ip/neighbor: Router: 403'])
+})
+
+test("devices: the router's own interfaces and addresses, named by its identity", async () => {
+  const f = fake()
+  f.t['system/identity'] = [{ name: 'core' }]
+  f.put('interface', { name: 'bridge', 'mac-address': '00:00:5E:00:53:A1', type: 'bridge' })
+  f.put('interface', { name: 'wg0', type: 'wg' })
+  f.put('interface', { name: 'ether9', 'mac-address': '00:00:5E:00:53:A9', disabled: 'true' })
+  f.put('ip/address', { address: '192.0.2.1/24', interface: 'bridge' })
+  const a = await look('r', f.r)
+  assert.deepEqual(a.map((x) => [x.source, x.mac, x.ip, x.interface, x.hostname]), [['self', '00:00:5E:00:53:A1', null, 'bridge', 'core'], ['self', null, '192.0.2.1', 'bridge', 'core']])
 })
 
 test('a router address without TLS is refused', () => assert.throws(() => rest('http://192.0.2.1', { user: 'a', password: 'b' }), /https/))

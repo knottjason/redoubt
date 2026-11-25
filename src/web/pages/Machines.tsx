@@ -17,7 +17,7 @@ const columns: ColumnDef<Row, any>[] = [
     ? <Link to={`/machines/${encodeURIComponent(r.ip)}`} onClick={(e) => e.stopPropagation()}>{r.shown || r.ip}{r.shown && <div className="mono dim">{r.ip}</div>}</Link>
     : <span>{r.shown || r.mac}<div className="dim">no address now</div></span>}<Rename id={r.id} name={r.name} label={r.shown || r.ip || r.mac || ''} dns={r.want_dns} /></span> },
   { id: 'tags', accessorFn: (r) => (r.alert ? 3 : 0) + (r.isNew ? 2 : 0), header: '', cell: ({ row: { original: r } }) => <>
-    {r.alert && <Tag c="#ff8a8a" title="New on a watched network">ALERT</Tag>}{r.isNew && <Tag c="#f5a524">NEW</Tag>}{r.static && <Tag c="#9aa4b2" title="Fixed lease">STATIC</Tag>}{r.dns.length > 0 && <Tag c="#7fb0ff" title={r.dns.join(', ')}>DNS</Tag>}
+    {r.router_self && <Tag c="#7fb0ff" title={`${r.router_self}'s own interfaces and addresses (${r.ips.length})`}>ROUTER</Tag>}{r.alert && <Tag c="#ff8a8a" title="New on a watched network">ALERT</Tag>}{r.isNew && <Tag c="#f5a524">NEW</Tag>}{r.static && <Tag c="#9aa4b2" title="Fixed lease">STATIC</Tag>}{r.dns.length > 0 && <Tag c="#7fb0ff" title={r.dns.join(', ')}>DNS</Tag>}
     {r.name && r.router_name && r.name !== r.router_name && <Tag c="#f5a524" title={`The router calls it ${r.router_name}`}>DIFFERS</Tag>}</> },
   { accessorKey: 'mac', header: 'MAC', cell: ({ row: { original: r } }) => <><span className="mono">{r.mac ?? '–'}</span>{r.random_mac && <div className="dim" style={{ fontSize: 11 }}>private MAC</div>}</> },
   { accessorKey: 'hostname', header: 'Calls itself', cell: ({ row: { original: r } }) => <span className="dim">{r.hostname ?? ''}</span> },

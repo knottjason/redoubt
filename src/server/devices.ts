@@ -15,6 +15,8 @@ export type Device = {
   want_dns: boolean
   /** The switch port it is plugged into (the edge port, not an uplink), and the VLAN it was seen on. */
   port: string | null; port_router: string | null; vlan: number | null
+  /** Set when this device is one of the routers themselves: its name in the plugin. */
+  router_self: string | null
   first_seen: string; last_seen: string
 }
 /** A switch port and how many devices sit behind it. More than two means an access point or another switch. */
@@ -27,6 +29,8 @@ type Row = Omit<Device, 'random_mac' | 'dns' | 'static' | 'want_dns'> & { random
 const day = 86_400_000
 const slash24 = (ip: string) => `${ip.split('.').slice(0, 3).join('.')}.0/24`
 const guest = /guest/i
+/** Multicast and broadcast MACs (the group bit) and all zeros never name one device. */
+export const deviceMac = (m: string) => !(parseInt(m.slice(0, 2), 16) & 1) && !/^(00:){5}00$/.test(m)
 // Not one device: multicast, broadcast, loopback, unspecified, link-local. Link-local IPv6 addresses are real hosts, but every
 // device has one beside its real address, so they would only make duplicates.
 const notDevices = parseNetworks('0.0.0.0/8,127.0.0.0/8,169.254.0.0/16,224.0.0.0/3,::/127,fe80::/10,ff00::/8')
@@ -53,7 +57,7 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     CREATE TABLE IF NOT EXISTS device_ips (device INTEGER NOT NULL REFERENCES devices(id), ip TEXT NOT NULL, first TEXT NOT NULL, last TEXT NOT NULL, PRIMARY KEY (device, ip));
     CREATE INDEX IF NOT EXISTS device_ips_ip ON device_ips (ip);
     CREATE TABLE IF NOT EXISTS device_events (id INTEGER PRIMARY KEY, device INTEGER NOT NULL REFERENCES devices(id), kind TEXT NOT NULL, at TEXT NOT NULL, ack_at TEXT, ack_by TEXT);`)
-  for (const [c, t] of [['port', 'TEXT'], ['port_router', 'TEXT'], ['vlan', 'INTEGER']] as const)
+  for (const [c, t] of [['port', 'TEXT'], ['port_router', 'TEXT'], ['vlan', 'INTEGER'], ['router_self', 'TEXT']] as const)
     if (!db.prepare('PRAGMA table_info(devices)').all().some((x) => x.name === c)) db.exec(`ALTER TABLE devices ADD COLUMN ${c} ${t}`)
   const setting = <T>(k: string, fallback: T): T => {
     const r = db.prepare('SELECT v FROM settings WHERE k = ?').get(k) as { v: string } | undefined
@@ -98,6 +102,12 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
       const holder = db.prepare(`SELECT d.id FROM device_ips i JOIN devices d ON d.ip = i.ip AND d.site = ? AND d.id != ? WHERE i.device = ? ORDER BY i.last DESC LIMIT 1`).get(site, id, id) as { id: number } | undefined
       if (holder) merge(id, holder.id)
     }
+  }
+  // Multicast and broadcast MACs were never devices.
+  for (const { id, mac } of db.prepare("SELECT id, mac FROM devices WHERE site = ? AND mac IS NOT NULL AND name = ''").all(site) as { id: number; mac: string }[]) {
+    if (deviceMac(mac)) continue
+    for (const t of ['device_events', 'device_ips']) db.prepare(`DELETE FROM ${t} WHERE device = ?`).run(id)
+    db.prepare('DELETE FROM devices WHERE id = ?').run(id)
   }
   // Clear out addresses that were wrongly made devices: nothing a person or a router said about them is lost.
   {
@@ -175,9 +185,35 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
 
     db.exec('BEGIN')
     try {
+      // Each router's own MACs and addresses become one device for that router, absorbing any strays made from them before.
+      const selfMacs = new Set<string>()
+      const selfIps = new Set<string>()
+      const own = facts.filter((f) => f.source === 'self')
+      for (const router of new Set(own.map((f) => f.router))) {
+        const fs = own.filter((f) => f.router === router)
+        const macs = [...new Set(fs.map((f) => f.mac).filter((m): m is string => !!m && deviceMac(m)))]
+        const ips = [...new Set(fs.map((f) => f.ip).filter((i): i is string => !!i && deviceAddress(i, internal)))]
+        macs.forEach((m) => selfMacs.add(m))
+        ips.forEach((i) => selfIps.add(i))
+        const holders = [...new Set([
+          ...macs.map((m) => find.mac(m)?.id), ...ips.flatMap((i) => (db.prepare('SELECT id FROM devices WHERE site = ? AND ip = ?').all(site, i) as { id: number }[]).map((x) => x.id)),
+        ].filter((x): x is number => x !== undefined))]
+        const mine = db.prepare('SELECT id FROM devices WHERE site = ? AND router_self = ?').get(site, router) as { id: number } | undefined
+        const named = holders.find((h) => (db.prepare('SELECT name FROM devices WHERE id = ?').get(h) as { name: string }).name)
+        // Not through make(): a router is never a "new device" alert.
+        const id = mine?.id ?? named ?? holders[0] ?? Number(db.prepare('INSERT INTO devices (site, first_seen, last_seen) VALUES (?, ?, ?)').run(site, at, at).lastInsertRowid)
+        for (const h of holders) merge(h, id)
+        db.prepare('UPDATE devices SET mac = NULL WHERE site = ? AND id != ? AND mac IN (SELECT value FROM json_each(?))').run(site, id, JSON.stringify(macs))
+        const main = fs.find((f) => f.mac && /^bridge/i.test(f.interface ?? '')) ?? fs.find((f) => f.mac)
+        const ip = fs.find((f) => f.ip && selfIps.has(f.ip) && /^(bridge|vlan)/i.test(f.interface ?? ''))?.ip ?? ips[0] ?? null
+        db.prepare(`UPDATE devices SET router_self = ?, mac = coalesce(?, mac), random_mac = 0, hostname = ?, ip = coalesce(?, ip), router = ?, last_seen = ? WHERE id = ?`)
+          .run(router, main?.mac && deviceMac(main.mac) ? main.mac : macs[0] ?? null, fs[0]!.hostname ?? router, ip, router, at, id)
+        for (const i of ips) seenAt(i, id, at)
+        if (ip) db.prepare('UPDATE devices SET ip = ? WHERE id = ?').run(ip, id)
+      }
       const byMac = new Map<string, Fact[]>()
-      for (const f of facts) if (f.mac && f.source !== 'dns') byMac.set(f.mac, [...(byMac.get(f.mac) ?? []), f])
-      const done = new Set<string>()
+      for (const f of facts) if (f.mac && f.source !== 'dns' && f.source !== 'self' && deviceMac(f.mac) && !selfMacs.has(f.mac)) byMac.set(f.mac, [...(byMac.get(f.mac) ?? []), f])
+      const done = new Set<string>(selfIps)
       const claimed = new Set<number>()
       for (const [mac, fs] of byMac) {
         const lease = fs.find((f) => f.source === 'dhcp')

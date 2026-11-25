@@ -134,3 +134,23 @@ test('a device first seen only on a switch port absorbs the address-only device 
   assert.equal(again.length, 1)
   assert.deepEqual([again[0]!.name, again[0]!.first_seen], ['Camera', at])
 })
+
+test("a router's own MACs and addresses are one device, absorbing strays; multicast MACs are never devices", () => {
+  const db = new DatabaseSync(':memory:')
+  const d = openDevices(db, 'a', own)
+  const self = (f: Partial<Fact>) => fact({ source: 'self', router: 'sw', hostname: 'switch', ...f })
+  // Strays from before: an address seen in traffic and a MAC from fw's ARP.
+  d.refresh([fact({ source: 'arp', router: 'fw', mac: '00:00:00:00:0A:02', ip: '192.0.2.2' }), fact({ source: 'arp', mac: '01:00:5E:00:00:FB', ip: '192.0.2.250' })], [{ ip: '198.51.100.1', last: '2026-01-01T00:00:00Z' }])
+  d.rename({ ip: '198.51.100.1' }, 'Core', false)
+  d.refresh([self({ mac: '00:00:00:00:0A:01', interface: 'bridge' }), self({ mac: '00:00:00:00:0A:02', interface: 'sfp1' }), self({ mac: '01:80:C2:00:00:00', interface: 'odd' }),
+    self({ ip: '192.0.2.2', interface: 'bridge' }), self({ ip: '198.51.100.1', interface: 'vlan100' }),
+    fact({ source: 'bridge', router: 'sw', mac: '00:00:00:00:0A:02', interface: 'sfp1' }), fact({ source: 'arp', router: 'fw', mac: '00:00:00:00:0A:01', ip: '192.0.2.2' })], [{ ip: '198.51.100.1', last: '2026-01-02T00:00:00Z' }])
+  const all = d.list()
+  assert.deepEqual(all.map((x) => [x.router_self, x.mac, x.ip, x.shown]), [['sw', '00:00:00:00:0A:01', '192.0.2.2', 'Core']])
+  assert.deepEqual(all[0]!.ips.map((i) => i.ip).sort(), ['192.0.2.2', '198.51.100.1'])
+  assert.equal(d.name('198.51.100.1'), 'Core')
+  assert.equal(d.events().length, 0)
+  // Stored before the filter: cleared on start.
+  db.prepare("INSERT INTO devices (site, mac, first_seen, last_seen) VALUES ('a', '33:33:00:00:00:01', 'x', 'x')").run()
+  assert.equal(openDevices(db, 'a', own).list().length, 1)
+})

@@ -18,11 +18,11 @@
 
 ## Devices
 
-`devices` returns `facts` and `errors` (a router that couldn't be asked). A fact is one record from one source on one router. Plugins do not merge. Skip local, invalid and external bridge rows; a switch learns every MAC on its uplinks, so Redoubt places a device on the port that carries the fewest MACs. A source a router can't be asked for is left out, not an error. Redoubt decides which facts are the same device, because it also sees traffic.
+`devices` returns `facts` and `errors` (a router that couldn't be asked). A fact is one record from one source on one router. Plugins do not merge. Skip local, invalid and external bridge rows; a switch learns every MAC on its uplinks, so Redoubt places a device on the port that carries the fewest MACs. A source a router can't be asked for is left out, not an error. Leave out multicast and broadcast MACs. Redoubt shows a router's `self` facts as one device for that router. Redoubt decides which facts are the same device, because it also sees traffic.
 
 | Field | Meaning |
 |---|---|
-| `router`, `source`, `ref` | Where it came from: `dhcp`, `arp`, `dns`, `bridge` (a switch's MAC table) or `neighbor` (LLDP/MNDP/CDP), and that record's own handle, for writing back later |
+| `router`, `source`, `ref` | Where it came from: `dhcp`, `arp`, `dns`, `bridge` (a switch's MAC table), `neighbor` (LLDP/MNDP/CDP) or `self` (one of the router's own interfaces or addresses, with `hostname` its identity), and that record's own handle, for writing back later |
 | `hash` | Changes when anything except `seen` changes, so renames on the router are noticed |
 | `mac`, `random_mac` | `random_mac` means locally administered |
 | `ip`, `interface`, `seen` | `interface` is the DHCP server for a lease, the interface for ARP, the switch port for `bridge` and `neighbor` |
