@@ -161,3 +161,19 @@ test('built-in chat: past 75% of the context, the oldest part is summarized and 
   assert.match(prompt, /SUMMARY: early talk/)
   assert.equal(prompt.includes('message 0 '), false)
 })
+
+test('MCP: big results stay valid JSON, alerts page and filter, overview groups open alerts by rule', async () => {
+  const { s } = fakeServices()
+  const many = Array.from({ length: 400 }, (_, i) => ({ site: 'main', source: 'x', sid: i % 3 + 1, severity: i % 3 + 1, hits: 2, signature: 'Example '.repeat(40), src: '192.0.2.9', dst: '203.0.113.5', machine: '192.0.2.9', remote: '203.0.113.5', direction: 'out', decision: null }))
+  s.alerts = async () => many
+  s.overview = async () => ({ internet: [{ t: 'a', up: 1, down: 2 }, { t: 'b', up: 3, down: 4 }], open: many })
+  const c = await connect(s, 'read')
+  const text = async (name: string, args: Record<string, unknown>) => JSON.parse(((await c.callTool({ name, arguments: args })).content as { text: string }[])[0]!.text)
+  const big = await text('list_alerts', { limit: 200 })
+  assert.ok(big.cut === true || big.rows.length === 200)
+  const p = await text('list_alerts', { sid: 2, limit: 10, offset: 5 })
+  assert.equal(p.total, 133); assert.equal(p.rows.length, 10); assert.equal(p.more, true); assert.equal(p.rows[0].site, undefined)
+  const o = await text('get_overview', {})
+  assert.deepEqual(o.internet, { up: 4, down: 6 })
+  assert.equal(o.open.pairs, 400); assert.equal(o.open.rules.length, 3); assert.equal(o.open.rules[0].sid, 1)
+})

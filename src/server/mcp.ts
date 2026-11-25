@@ -47,11 +47,16 @@ Policy, enforced by Redoubt whatever you ask: internal addresses are never block
 Recommend changes with evidence (alert counts, first seen, bytes, names) and propose them together so the person can approve them in one go.
 If a tool is missing, data looks wrong, or you had to work around something, call report_gap.`
 
+const cap = 60_000
 const out = (v: unknown) => {
   const text = JSON.stringify(v)
-  // Keep a runaway result from filling the model's context.
-  return { content: [{ type: 'text' as const, text: text.length > 60_000 ? `${text.slice(0, 60_000)}… [cut: ${text.length} characters in total; narrow the query]` : text }] }
+  // Keep a runaway result from filling the model's context, and keep it valid JSON when cut.
+  if (text.length <= cap) return { content: [{ type: 'text' as const, text }] }
+  return { content: [{ type: 'text' as const, text: JSON.stringify({ cut: true, characters: text.length, note: 'Result too large and cut. Use limit/offset or filters.', start: text.slice(0, cap - 300) }) }] }
 }
+// Fields every alert row repeats; the agent knows the site from the instructions.
+const slim = ({ site: _s, source: _src, ...r }: Record<string, unknown>) => r
+const page = <T,>(rows: T[], offset: number, limit: number) => ({ total: rows.length, offset, rows: rows.slice(offset, offset + limit), more: offset + limit < rows.length })
 const fail = (e: unknown) => ({ isError: true, content: [{ type: 'text' as const, text: (e as Error).message }] })
 const safe = <A,>(f: (a: A) => unknown) => async (a: A) => { try { return out(await f(a)) } catch (e) { return fail(e) } }
 const ro = { readOnlyHint: true, openWorldHint: false }
@@ -60,29 +65,53 @@ export function mcpServer(s: Services, gaps: AgentStore['gaps'], who: Caller): M
   const server = new McpServer({ name: 'redoubt', version: '0.1.0' }, { instructions })
   const t = server.registerTool.bind(server)
 
-  t('get_overview', { description: 'Internet bandwidth over time, busiest machines, open alerts without a decision, and how fresh the data is.', inputSchema: { hours }, annotations: ro },
-    safe(({ hours }) => s.overview(hours)))
+  t('get_overview', {
+    description: 'Summary: internet traffic totals (and the series if asked), busiest machines, open alerts without a decision grouped by rule, and how fresh the data is. Use list_alerts for the pairs.',
+    inputSchema: { hours, bandwidth_series: z.boolean().default(false).describe('Include the bandwidth time series') }, annotations: ro,
+  }, safe(async ({ hours, bandwidth_series }) => {
+    const o = (await s.overview(hours)) as { internet?: { t: string; up: number; down: number }[]; open?: Record<string, unknown>[] } & Record<string, unknown>
+    const { internet = [], open = [], ...rest } = o
+    const byRule = new Map<number, { sid: number; signature: unknown; severity: unknown; pairs: number; hits: number; machines: Set<unknown> }>()
+    for (const a of open) {
+      const g = byRule.get(a.sid as number) ?? { sid: a.sid as number, signature: a.signature, severity: a.severity, pairs: 0, hits: 0, machines: new Set() }
+      g.pairs++; g.hits += Number(a.hits ?? 0); g.machines.add(a.machine)
+      byRule.set(g.sid, g)
+    }
+    return {
+      ...rest,
+      internet: { up: internet.reduce((n, b) => n + b.up, 0), down: internet.reduce((n, b) => n + b.down, 0), ...(bandwidth_series && { series: internet }) },
+      open: { pairs: open.length, rules: [...byRule.values()].map((g) => ({ ...g, machines: g.machines.size })).sort((a, b) => Number(a.severity) - Number(b.severity) || b.hits - a.hits) },
+    }
+  }))
   t('get_status', { description: 'Sensor health: packets, drops, whether data is arriving, and how far back records go.', annotations: ro }, safe(() => s.summary()))
   t('list_alerts', {
-    description: 'Alerts grouped by rule and address pair, worst first, each with the decision covering it (if any) and whether it is new.',
-    inputSchema: { hours, open_only: z.boolean().default(false).describe('Only alerts no decision covers yet'), machine: ip.optional().describe('Only alerts involving this address'), limit: limit(500) },
+    description: `Alerts grouped by rule and address pair, worst first, each with the decision covering it (if any) and whether the pair is new (first seen in the last 24 h).
+Sensor-internal rules (signatures starting "SURICATA ", e.g. stream and decoder events) are left out here; see list_rules_fired. For DNS alerts the remote is the resolver; get_alert shows the names looked up.`,
+    inputSchema: {
+      hours, open_only: z.boolean().default(false).describe('Only alerts no decision covers yet'), machine: ip.optional().describe('Only alerts involving this address'),
+      sid: z.number().int().positive().optional().describe('Only this rule'), max_severity: z.number().int().min(1).max(3).optional().describe('1 = high only, 2 = high and medium'),
+      direction: z.enum(['in', 'out', 'internal']).optional(), offset: z.number().int().min(0).default(0), limit: limit(200),
+    },
     annotations: ro,
-  }, safe(async ({ hours, open_only, machine, limit }) => {
+  }, safe(async ({ hours, open_only, machine, sid, max_severity, direction, offset, limit }) => {
     let rows = await s.alerts(hours)
     if (open_only) rows = rows.filter((r) => !r.decision)
     if (machine) rows = rows.filter((r) => r.machine === machine || r.remote === machine)
-    return { total: rows.length, rows: rows.slice(0, limit) }
+    if (sid) rows = rows.filter((r) => r.sid === sid)
+    if (max_severity) rows = rows.filter((r) => Number(r.severity) <= max_severity)
+    if (direction) rows = rows.filter((r) => r.direction === direction)
+    return page(rows.map(slim), offset, limit)
   }))
   t('get_alert', { description: 'One alert pair in depth: hourly hits, samples, history of the pair, bandwidth, other connections around it, and site names.', inputSchema: { sid: z.number().int().positive(), src: ip, dst: ip }, annotations: ro },
     safe(({ sid, src, dst }) => s.alertDetail(sid, src, dst)))
-  t('list_rules_fired', { description: 'Which Suricata rules fired, how often and between how many pairs.', inputSchema: { hours, limit: limit(1000) }, annotations: ro },
-    safe(async ({ hours, limit }) => (await s.rules(hours)).slice(0, limit)))
+  t('list_rules_fired', { description: 'Which Suricata rules fired, how often and between how many pairs, including sensor-internal ones.', inputSchema: { hours, offset: z.number().int().min(0).default(0), limit: limit(1000) }, annotations: ro },
+    safe(async ({ hours, offset, limit }) => page(await s.rules(hours), offset, limit)))
   t('search_ruleset', {
     description: 'Search the sensor\'s full rule set (needs a rules plugin), with any decision on each rule.',
     inputSchema: { find: z.string().max(100).default(''), state: z.enum(['all', 'on', 'off']).default('all'), offset: z.number().int().min(0).default(0) }, annotations: ro,
   }, safe((q) => s.ruleset(q)))
   t('list_machines', { description: 'Internal machines by traffic: bytes up and down, connections, distinct destinations, last seen, name.', inputSchema: { hours, limit: limit(1000) }, annotations: ro },
-    safe(async ({ hours, limit }) => (await s.machines(hours)).slice(0, limit)))
+    safe(async ({ hours, limit }) => page(await s.machines(hours), 0, limit)))
   t('get_machine', { description: 'One machine: bandwidth, biggest connections with names and first-seen, destinations first seen in the last day, and its alerts.', inputSchema: { ip, hours }, annotations: ro },
     safe(({ ip, hours }) => s.machine(ip, hours)))
   t('list_devices', { description: 'Every device on the network, merged: MAC, IP and its history, hostname, the name in Redoubt and on the router, DNS names, traffic over these hours, and whether it is new.', inputSchema: { hours }, annotations: ro },
@@ -90,7 +119,7 @@ export function mcpServer(s: Services, gaps: AgentStore['gaps'], who: Caller): M
   t('list_device_records', { description: 'The raw records behind list_devices: DHCP leases, ARP and static DNS from each router, one per source. For checking where a name or address came from.', annotations: ro }, safe(() => s.devices()))
   t('list_plugins', { description: 'Plugins at this site, what they handle, and whether they are healthy.', annotations: ro }, safe(() => s.plugins()))
   t('list_decisions', { description: 'Decisions made, newest first, with whether each is in place on the devices.', inputSchema: { limit: limit(500) }, annotations: ro },
-    safe(({ limit }) => s.history().slice(0, limit)))
+    safe(({ limit }) => page(s.history(), 0, limit)))
   if (s.sql && s.schema) {
     const sql = s.sql
     t('describe_tables', { description: 'Tables and columns of the ClickHouse database, for query_sql.', annotations: ro }, safe(() => s.schema!()))
