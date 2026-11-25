@@ -22,6 +22,11 @@ const columns: ColumnDef<Row, any>[] = [
   { accessorKey: 'mac', header: 'MAC', cell: ({ row: { original: r } }) => <><span className="mono">{r.mac ?? '–'}</span>{r.random_mac && <div className="dim" style={{ fontSize: 11 }}>private MAC</div>}</> },
   { accessorKey: 'hostname', header: 'Calls itself', cell: ({ row: { original: r } }) => <span className="dim">{r.hostname ?? ''}</span> },
   { accessorKey: 'interface', header: 'Network', cell: ({ row: { original: r } }) => <span className="dim">{r.interface ?? ''}</span> },
+  { id: 'port', accessorFn: (r) => r.port ?? '', header: 'Switch port', cell: ({ row: { original: r }, table }) => {
+    if (!r.port) return null
+    const p = (table.options.meta as { ports?: Inv['ports'] } | undefined)?.ports?.find((x) => x.router === r.port_router && x.port === r.port)
+    return <><span className="mono">{r.port}</span>{r.vlan !== null && <span className="dim"> · VLAN {r.vlan}</span>}<div className="dim" style={{ fontSize: 11 }}>{r.port_router}{p?.shared && <span style={{ color: '#f5a524' }}> · behind an AP or switch ({p.macs})</span>}</div></>
+  } },
   { accessorKey: 'down', header: 'Down', meta: { right: true }, cell: num(bytes) }, { accessorKey: 'up', header: 'Up', meta: { right: true }, cell: num(bytes) },
   { accessorKey: 'connections', header: 'Conns', meta: { right: true }, cell: num() },
   { accessorKey: 'last_seen', header: 'Last seen', cell: ({ row: { original: r } }) => <span className="mono dim">{when(r.active && r.active > r.last_seen ? r.active : r.last_seen)}</span> },
@@ -38,15 +43,15 @@ export function Machines() {
   const known = useKnown()
   const all = q.data?.devices ?? []
   const f = find.toLowerCase()
-  const rows = all.filter(shows[show]).filter((r) => !f || [r.shown, r.ip, r.mac, r.hostname, ...r.ips.map((i) => i.ip)].some((v) => v?.toLowerCase().includes(f)))
+  const rows = all.filter(shows[show]).filter((r) => !f || [r.shown, r.ip, r.mac, r.hostname, r.port, ...r.ips.map((i) => i.ip)].some((v) => v?.toLowerCase().includes(f)))
   const alerts = all.filter((r) => r.alert)
   return <div className="page" style={{ display: 'grid', gap: 14 }}>
-    <Group justify="space-between"><b style={{ fontSize: 18 }}>Devices</b><Group><TextInput size="xs" aria-label="Find" placeholder="Name, IP, MAC…" value={find} onChange={(e) => setFind(e.currentTarget.value)} /><Range v={hours} set={setHours} /></Group></Group>
+    <Group justify="space-between"><b style={{ fontSize: 18 }}>Devices</b><Group><TextInput size="xs" aria-label="Find" placeholder="Name, IP, MAC, port…" value={find} onChange={(e) => setFind(e.currentTarget.value)} /><Range v={hours} set={setHours} /></Group></Group>
     {alerts.length > 0 && <div className="panel" style={{ padding: 12, borderColor: '#5a2a2e' }}><div className="label" style={{ marginBottom: 8 }}>New on a watched network</div>
       {alerts.map((r) => <Group key={r.id} justify="space-between" py={4}><span><b>{r.shown || r.ip}</b> <span className="mono dim">{r.ip} · {r.mac}</span> <span className="dim">first seen {when(r.first_seen)}</span></span>
         <Group gap={6}><Rename id={r.id} name={r.name} dns={r.want_dns} always /><Button size="compact-xs" variant="light" loading={known.isPending} onClick={() => known.mutate(r.id)}>It's known</Button></Group></Group>)}</div>}
     <Group gap={6}>{(Object.keys(shows) as (keyof typeof shows)[]).map((k) => <Button key={k} size="xs" radius={16} variant={k === show ? 'light' : 'default'} onClick={() => setShow(k)}>{k}&nbsp;<span className="mono dim">{all.filter(shows[k]).length}</span></Button>)}</Group>
-    <Load q={q}><Grid data={rows} columns={columns} rowKey={(r) => `${r.site}|${r.id}`} onPick={(r) => r.ip && nav(`/machines/${encodeURIComponent(r.ip)}`)} empty="No devices yet. They appear once a router plugin lists them or the sensor sees traffic." /></Load>
+    <Load q={q}><Grid data={rows} columns={columns} meta={{ ports: q.data?.ports ?? [] }} rowKey={(r) => `${r.site}|${r.id}`} onPick={(r) => r.ip && nav(`/machines/${encodeURIComponent(r.ip)}`)} empty="No devices yet. They appear once a router plugin lists them or the sensor sees traffic." /></Load>
     {q.data && <Watched nets={q.data.networks} />}
   </div>
 }
@@ -88,6 +93,7 @@ export function MachinePage() {
         <div className="inset"><div className="label">Calls itself</div>{d.device.hostname ?? '–'}</div>
         <div className="inset"><div className="label">Router's name</div>{d.device.router_name || '–'}{d.device.name && d.device.router_name && d.device.name !== d.device.router_name && <div style={{ color: '#f5a524', fontSize: 11 }}>differs from Redoubt's</div>}</div>
         <div className="inset"><div className="label">DNS</div>{d.device.dns.join(', ') || '–'}{d.device.static && <div className="dim" style={{ fontSize: 11 }}>fixed lease</div>}</div>
+        <div className="inset"><div className="label">Switch port</div>{d.device.port ? <><span className="mono">{d.device.port}</span>{d.device.vlan !== null && <span className="dim"> · VLAN {d.device.vlan}</span>}<div className="dim" style={{ fontSize: 11 }}>{d.device.port_router}</div></> : '–'}</div>
         <div className="inset"><div className="label">First seen</div><span className="mono">{when(d.device.first_seen)}</span></div>
       </div>}
       <div className="panel" style={{ padding: 14 }}><div className="label">Bandwidth</div><Bandwidth data={d.bandwidth} h={200} /></div>

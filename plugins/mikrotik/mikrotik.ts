@@ -121,7 +121,9 @@ const mac = (s?: string) => (s && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(s) ? s.
 const clean = (s?: string) => (s ? s.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120) || null : null)
 
 export async function look(router: string, r: Rest, now = Date.now()): Promise<Fact[]> {
-  const [leases, arps, dns] = await Promise.all([r.get('ip/dhcp-server/lease'), r.get('ip/arp'), r.get('ip/dns/static')])
+  // A switch may have no DHCP or neighbour discovery; a source that can't be read is just not there.
+  const maybe = (path: string) => r.get(path).catch(() => [] as Item[])
+  const [leases, arps, dns, hosts, neighbors] = await Promise.all([r.get('ip/dhcp-server/lease'), r.get('ip/arp'), r.get('ip/dns/static'), maybe('interface/bridge/host'), maybe('ip/neighbor')])
   const make = (source: Fact['source'], ref: string, f: Partial<Fact>): Fact => {
     const m = f.mac ?? null
     const x = { router, source, ref, mac: m, random_mac: m ? (parseInt(m.slice(0, 2), 16) & 2) === 2 : false, ip: null, comment: null, hostname: null, dns: [], static: false, interface: null, ...f }
@@ -137,5 +139,15 @@ export async function look(router: string, r: Rest, now = Date.now()): Promise<F
   }
   for (const a of arps) if (a.disabled !== 'true' && mac(a['mac-address'])) out.push(make('arp', a['.id']!, { mac: mac(a['mac-address']), ip: a.address ?? null, interface: a.interface ?? null, comment: clean(a.comment), seen: a.status === 'reachable' ? new Date(now).toISOString() : null }))
   for (const d of dns) if (d.disabled !== 'true' && d.dynamic !== 'true' && (d.type ?? 'A') === 'A' && d.address && d.name) out.push(make('dns', d['.id']!, { ip: d.address, dns: [clean(d.name)!], comment: clean(d.comment) }))
+  for (const h of hosts) {
+    if (h.local === 'true' || h.invalid === 'true' || h.external === 'true' || h.disabled === 'true' || !mac(h['mac-address'])) continue
+    const vid = Number(h.vid)
+    out.push(make('bridge', h['.id']!, { mac: mac(h['mac-address']), interface: h['on-interface'] ?? h.interface ?? null, vlan: Number.isInteger(vid) && vid > 0 ? vid : null, seen: new Date(now).toISOString() }))
+  }
+  for (const n of neighbors) {
+    if (!mac(n['mac-address'])) continue
+    const what = [n.platform, n.board].map((x) => clean(x)).filter(Boolean).join(' ')
+    out.push(make('neighbor', n['.id']!, { mac: mac(n['mac-address']), ip: n.address && /^[\d.]+$/.test(n.address) ? n.address : null, interface: clean(n.interface?.split(',')[0]), hostname: clean(n.identity), comment: what || null }))
+  }
   return out
 }

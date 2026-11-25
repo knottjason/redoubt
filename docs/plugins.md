@@ -18,16 +18,17 @@
 
 ## Devices
 
-`devices` returns `facts` and `errors` (a router that couldn't be asked). A fact is one record from one source on one router. Plugins do not merge. Redoubt decides which facts are the same device, because it also sees traffic.
+`devices` returns `facts` and `errors` (a router that couldn't be asked). A fact is one record from one source on one router. Plugins do not merge. Skip local, invalid and external bridge rows; a switch learns every MAC on its uplinks, so Redoubt places a device on the port that carries the fewest MACs. A source a router can't be asked for is left out, not an error. Redoubt decides which facts are the same device, because it also sees traffic.
 
 | Field | Meaning |
 |---|---|
-| `router`, `source`, `ref` | Where it came from: `dhcp`, `arp` or `dns`, and that record's own handle, for writing back later |
+| `router`, `source`, `ref` | Where it came from: `dhcp`, `arp`, `dns`, `bridge` (a switch's MAC table) or `neighbor` (LLDP/MNDP/CDP), and that record's own handle, for writing back later |
 | `hash` | Changes when anything except `seen` changes, so renames on the router are noticed |
 | `mac`, `random_mac` | `random_mac` means locally administered |
-| `ip`, `interface`, `seen` | `interface` is the DHCP server for a lease, the interface for ARP |
-| `comment` | The comment a person put on the record; for a lease, its name |
-| `hostname` | The name the device gave itself |
+| `ip`, `interface`, `seen` | `interface` is the DHCP server for a lease, the interface for ARP, the switch port for `bridge` and `neighbor` |
+| `vlan` | Optional. The VLAN a `bridge` fact was seen on |
+| `comment` | The comment a person put on the record; for a lease, its name; for a `neighbor`, its platform and board |
+| `hostname` | The name the device gave itself (for a `neighbor`, its identity) |
 | `dns` | Static DNS names for this address |
 | `static` | A fixed lease |
 

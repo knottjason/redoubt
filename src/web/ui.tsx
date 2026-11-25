@@ -72,11 +72,11 @@ export function Load({ q, children }: { q: { isPending: boolean; error: Error | 
   return children
 }
 
-export function Grid<T>({ data, columns, onPick, selected, rowKey, empty = 'Nothing here.' }: {
-  data: T[]; columns: ColumnDef<T, any>[]; onPick?: (row: T) => void; selected?: string; rowKey: (row: T) => string; empty?: string
+export function Grid<T>({ data, columns, onPick, selected, rowKey, meta, empty = 'Nothing here.' }: {
+  data: T[]; columns: ColumnDef<T, any>[]; onPick?: (row: T) => void; selected?: string; rowKey: (row: T) => string; meta?: object; empty?: string
 }) {
   const [sorting, setSorting] = useState<SortingState>([])
-  const table = useReactTable({ data, columns, state: { sorting }, onSortingChange: setSorting, getRowId: rowKey, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel() })
+  const table = useReactTable({ data, columns, meta, state: { sorting }, onSortingChange: setSorting, getRowId: rowKey, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel() })
   const right = (c: ColumnDef<T, any>) => ((c.meta as { right?: boolean } | undefined)?.right ? 'r' : undefined)
   return (
     <div className="panel scroll">

@@ -80,6 +80,7 @@ export const services = {
         return { ...d, site: config.site, up: t?.up ?? 0, down: t?.down ?? 0, connections: t?.connections ?? 0, destinations: t?.destinations ?? 0, active: t?.last ?? null }
       }),
       networks: devices.networks(),
+      ports: devices.ports(),
     }
   },
   renameDevice: (target: { id: number } | { ip: string }, name: string, dns: boolean) => {

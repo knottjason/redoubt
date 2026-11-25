@@ -13,8 +13,12 @@ export type Device = {
   router: string | null; interface: string | null; dns: string[]; static: boolean
   /** Asked for a DNS name and a fixed lease when the name is written back. */
   want_dns: boolean
+  /** The switch port it is plugged into (the edge port, not an uplink), and the VLAN it was seen on. */
+  port: string | null; port_router: string | null; vlan: number | null
   first_seen: string; last_seen: string
 }
+/** A switch port and how many devices sit behind it. More than two means an access point or another switch. */
+export type Port = { router: string; port: string; macs: number; shared: boolean }
 export type DeviceEvent = { id: number; device: number; kind: 'new'; at: string; ack_at: string | null; ack_by: string | null }
 /** A network the routers hand out addresses on. Watched networks raise an alert when a device never seen before turns up. */
 export type Network = { cidr: string; server: string | null; auto: boolean; watched: boolean }
@@ -49,6 +53,8 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     CREATE TABLE IF NOT EXISTS device_ips (device INTEGER NOT NULL REFERENCES devices(id), ip TEXT NOT NULL, first TEXT NOT NULL, last TEXT NOT NULL, PRIMARY KEY (device, ip));
     CREATE INDEX IF NOT EXISTS device_ips_ip ON device_ips (ip);
     CREATE TABLE IF NOT EXISTS device_events (id INTEGER PRIMARY KEY, device INTEGER NOT NULL REFERENCES devices(id), kind TEXT NOT NULL, at TEXT NOT NULL, ack_at TEXT, ack_by TEXT);`)
+  for (const [c, t] of [['port', 'TEXT'], ['port_router', 'TEXT'], ['vlan', 'INTEGER']] as const)
+    if (!db.prepare('PRAGMA table_info(devices)').all().some((x) => x.name === c)) db.exec(`ALTER TABLE devices ADD COLUMN ${c} ${t}`)
   const setting = <T>(k: string, fallback: T): T => {
     const r = db.prepare('SELECT v FROM settings WHERE k = ?').get(k) as { v: string } | undefined
     return r ? (JSON.parse(r.v) as T) : fallback
@@ -79,6 +85,7 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     for (const id of junk) for (const t of ['device_events', 'device_ips']) db.prepare(`DELETE FROM ${t} WHERE device = ?`).run(id)
     for (const id of junk) db.prepare('DELETE FROM devices WHERE id = ?').run(id)
   }
+  let ports: Port[] = setting<Port[]>(`device_ports:${site}`, [])
   let byId = new Map<number, Device>()
   const reload = () => { byId = new Map(all().map((d) => [d.id, d])); index() }
   reload()
@@ -112,6 +119,17 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     const created: number[] = []
     const dnsFor = new Map<string, string[]>()
     for (const f of facts) if (f.source === 'dns' && f.ip) dnsFor.set(f.ip, [...(dnsFor.get(f.ip) ?? []), ...f.dns])
+    // Every switch learns every MAC on its uplinks too, so a device's port is the one carrying the fewest MACs.
+    const bridges = facts.filter((f) => f.source === 'bridge' && f.mac && f.interface)
+    const perPort = new Map<string, Set<string>>()
+    for (const f of bridges) { const k = `${f.router}|${f.interface}`; perPort.set(k, (perPort.get(k) ?? new Set()).add(f.mac!)) }
+    const edge = new Map<string, Fact>()
+    for (const f of bridges) {
+      const best = edge.get(f.mac!)
+      if (!best || perPort.get(`${f.router}|${f.interface}`)!.size < perPort.get(`${best.router}|${best.interface}`)!.size) edge.set(f.mac!, f)
+    }
+    if (bridges.length) ports = [...perPort].map(([k, m]) => { const [router, port] = k.split('|') as [string, string]; return { router, port, macs: m.size, shared: m.size > 2 } })
+      .sort((a, b) => a.router.localeCompare(b.router) || a.port.localeCompare(b.port, undefined, { numeric: true }))
 
     const find = {
       mac: (mac: string) => db.prepare('SELECT id FROM devices WHERE site = ? AND mac = ?').get(site, mac) as { id: number } | undefined,
@@ -139,8 +157,10 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
       const claimed = new Set<number>()
       for (const [mac, fs] of byMac) {
         const lease = fs.find((f) => f.source === 'dhcp')
+        const neighbor = fs.find((f) => f.source === 'neighbor')
+        const at_ = edge.get(mac)
         const ip = lease?.ip ?? fs.find((f) => f.ip)?.ip ?? null
-        const hostname = lease?.hostname ?? null
+        const hostname = lease?.hostname ?? neighbor?.hostname ?? null
         const byHost = find.mac(mac) ? undefined : hostname ? find.host(hostname)?.id : undefined
         // The old lease of a phone that just changed its MAC: the device is already accounted for.
         if (byHost !== undefined && claimed.has(byHost)) continue
@@ -150,10 +170,11 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
         const routerName = lease?.comment ?? ''
         // A rename on the router is newer than ours, so it takes over: two-way, newest wins.
         const name = routerName && routerName !== old.router_name && routerName !== old.name ? '' : old.name
-        const when = fs.map((f) => f.seen).filter(Boolean).sort().at(-1) ?? at
+        const when = fs.filter((f) => f.source !== 'bridge').map((f) => f.seen).filter(Boolean).sort().at(-1) ?? at
         db.prepare(`UPDATE devices SET mac = ?, random_mac = ?, hostname = coalesce(?, hostname), ip = coalesce(?, ip), name = ?, router_name = ?, router = ?, interface = coalesce(?, interface),
           dns = ?, static = ?, last_seen = max(last_seen, ?) WHERE id = ?`)
-          .run(mac, fs[0]!.random_mac ? 1 : 0, hostname, ip, name, routerName, (lease ?? fs[0]!).router, lease?.interface ?? fs[0]!.interface, JSON.stringify(ip ? dnsFor.get(ip) ?? [] : []), lease?.static ? 1 : 0, when, id)
+          .run(mac, fs[0]!.random_mac ? 1 : 0, hostname, ip, name, routerName, (lease ?? fs[0]!).router, lease?.interface ?? fs.find((f) => f.source === 'arp')?.interface ?? null, JSON.stringify(ip ? dnsFor.get(ip) ?? [] : []), lease?.static ? 1 : 0, when, id)
+        if (at_) db.prepare('UPDATE devices SET port = ?, port_router = ?, vlan = ? WHERE id = ?').run(at_.interface, at_.router, at_.vlan ?? null, id)
         seenAt(ip, id, when)
         if (ip) done.add(ip)
       }
@@ -180,12 +201,14 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
       db.exec('ROLLBACK')
       throw e
     }
+    if (bridges.length) save(`device_ports:${site}`, ports)
     reload()
     return { created: created.length }
   }
 
   return {
     refresh, networks, get,
+    ports: () => ports,
     names: () => Object.fromEntries(names),
     /** The best name for an address, now or in the past. */
     name: (ip: string) => names.get(ip) ?? '',
