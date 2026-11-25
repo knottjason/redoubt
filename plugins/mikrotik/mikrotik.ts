@@ -103,7 +103,9 @@ export function mikrotik(o: { routers: { name: string; read: Rest }[]; block?: {
       const facts: Fact[] = []
       const errors: { router: string; error: string }[] = []
       await Promise.all(o.routers.map(async ({ name, read }) => {
-        try { facts.push(...(await look(name, read))) } catch (e) { errors.push({ router: name, error: (e as Error).message.slice(0, 200) }) }
+        const missing: string[] = []
+        try { facts.push(...(await look(name, read, Date.now(), missing))) } catch (e) { errors.push({ router: name, error: (e as Error).message.slice(0, 200) }) }
+        for (const m of missing) errors.push({ router: name, error: m.slice(0, 200) })
       }))
       return { facts, errors }
     },
@@ -120,9 +122,13 @@ export function seconds(s = ''): number | null {
 const mac = (s?: string) => (s && /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(s) ? s.toUpperCase() : null)
 const clean = (s?: string) => (s ? s.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120) || null : null)
 
-export async function look(router: string, r: Rest, now = Date.now()): Promise<Fact[]> {
-  // A switch may have no DHCP or neighbour discovery; a source that can't be read is just not there.
-  const maybe = (path: string) => r.get(path).catch(() => [] as Item[])
+/** `trouble` collects sources that exist but could not be read (a login missing a policy, say), without failing the rest. */
+export async function look(router: string, r: Rest, now = Date.now(), trouble: string[] = []): Promise<Fact[]> {
+  // A router without a bridge or neighbour discovery just has none of those; anything else is worth saying.
+  const maybe = (path: string) => r.get(path).catch((e: Error) => {
+    if (!/no such command|not found|\b404\b/i.test(e.message)) trouble.push(`${path}: ${e.message}`)
+    return [] as Item[]
+  })
   const [leases, arps, dns, hosts, neighbors] = await Promise.all([r.get('ip/dhcp-server/lease'), r.get('ip/arp'), r.get('ip/dns/static'), maybe('interface/bridge/host'), maybe('ip/neighbor')])
   const make = (source: Fact['source'], ref: string, f: Partial<Fact>): Fact => {
     const m = f.mac ?? null

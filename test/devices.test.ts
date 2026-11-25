@@ -98,10 +98,13 @@ test('multicast, broadcast, link-local and outside addresses never become device
 
 test('a device sits on its edge port, not on the uplink every switch learns it on; busy ports are flagged', () => {
   const d = open()
+  d.refresh([lease('00:00:00:00:00:20', '192.0.2.66')])
   const br = (mac: string, port: string, router = 'sw', vlan: number | null = 1) => fact({ source: 'bridge', router, mac, interface: port, vlan })
   const clients = ['00:00:00:00:01:01', '00:00:00:00:01:02', '00:00:00:00:01:03']
   d.refresh([lease('00:00:00:00:00:20', '192.0.2.66'), br('00:00:00:00:00:20', 'ether20'), br('00:00:00:00:00:20', 'sfp1', 'core'),
     br('00:00:00:00:00:30', 'sfp1', 'core'), br('00:00:00:00:00:31', 'sfp1', 'core'), ...clients.map((m) => br(m, 'ether17'))])
+  // MACs only a switch knows have no address, so the first switch import raises no alerts.
+  assert.equal(d.events().length, 0)
   const x = d.list().find((v) => v.ip === '192.0.2.66')!
   assert.deepEqual([x.port, x.port_router, x.vlan], ['ether20', 'sw', 1])
   assert.deepEqual(d.ports().map((p) => [p.router, p.port, p.macs, p.shared]), [['core', 'sfp1', 3, true], ['sw', 'ether17', 3, true], ['sw', 'ether20', 1, false]])

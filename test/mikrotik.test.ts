@@ -110,8 +110,10 @@ test('devices: a switch reports MACs per port and its neighbours; local and inva
   assert.deepEqual(a.map((x) => [x.source, x.mac, x.interface, x.vlan ?? null, x.hostname, x.comment, x.ip]), [
     ['bridge', '00:00:5E:00:53:10', 'ether20', 1, null, null, null], ['neighbor', '00:00:5E:00:53:13', 'ether17', null, 'ap1', 'MikroTik cAP', '192.0.2.13']])
   // A router without a bridge or neighbour discovery still answers.
-  const broken: Rest = { ...f.r, async get(path) { if (path.startsWith('interface/bridge') || path.startsWith('ip/neighbor')) throw new Error('no such command'); return f.r.get(path) } }
-  assert.deepEqual(await look('fw', broken), [])
+  const broken: Rest = { ...f.r, async get(path) { if (path.startsWith('interface/bridge')) throw new Error('Router: no such command'); if (path.startsWith('ip/neighbor')) throw new Error('Router: 403'); return f.r.get(path) } }
+  const trouble: string[] = []
+  assert.deepEqual(await look('fw', broken, Date.now(), trouble), [])
+  assert.deepEqual(trouble, ['ip/neighbor: Router: 403'])
 })
 
 test('a router address without TLS is refused', () => assert.throws(() => rest('http://192.0.2.1', { user: 'a', password: 'b' }), /https/))
