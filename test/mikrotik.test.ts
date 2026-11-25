@@ -126,6 +126,7 @@ test("devices: the router's own interfaces and addresses, named by its identity"
   f.put('ip/address', { address: '192.0.2.1/24', interface: 'bridge' })
   const a = await look('r', f.r)
   assert.deepEqual(a.map((x) => [x.source, x.mac, x.ip, x.interface, x.hostname]), [['self', '00:00:5E:00:53:A1', null, 'bridge', 'core'], ['self', null, '192.0.2.1', 'bridge', 'core']])
+  assert.equal(new Set(a.map((x) => x.ref)).size, a.length)
 })
 
 test('a router address without TLS is refused', () => assert.throws(() => rest('http://192.0.2.1', { user: 'a', password: 'b' }), /https/))

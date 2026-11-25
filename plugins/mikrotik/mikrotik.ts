@@ -155,10 +155,10 @@ export async function look(router: string, r: Rest, now = Date.now(), trouble: s
   }
   // The router itself: its own interfaces and addresses, so Redoubt shows them as one device and not as strays.
   const self = clean((Array.isArray(identity) ? identity[0] : (identity as unknown as Item | undefined))?.name) ?? router
-  for (const i of ifaces) if (i.disabled !== 'true' && mac(i['mac-address'])) out.push(make('self', i['.id']!, { mac: mac(i['mac-address']), interface: clean(i.name), hostname: self }))
+  for (const i of ifaces) if (i.disabled !== 'true' && mac(i['mac-address'])) out.push(make('self', `if:${i['.id']}`, { mac: mac(i['mac-address']), interface: clean(i.name), hostname: self }))
   for (const a of addresses) {
     const ip = a.address?.split('/')[0]
-    if (a.disabled !== 'true' && a.invalid !== 'true' && ip) out.push(make('self', a['.id']!, { ip, interface: clean(a.interface), hostname: self }))
+    if (a.disabled !== 'true' && a.invalid !== 'true' && ip) out.push(make('self', `addr:${a['.id']}`, { ip, interface: clean(a.interface), hostname: self }))
   }
   for (const n of neighbors) {
     if (!mac(n['mac-address'])) continue

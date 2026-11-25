@@ -143,11 +143,13 @@ test("a router's own MACs and addresses are one device, absorbing strays; multic
   d.refresh([fact({ source: 'arp', router: 'fw', mac: '00:00:00:00:0A:02', ip: '192.0.2.2' }), fact({ source: 'arp', mac: '01:00:5E:00:00:FB', ip: '192.0.2.250' })], [{ ip: '198.51.100.1', last: '2026-01-01T00:00:00Z' }])
   d.rename({ ip: '198.51.100.1' }, 'Core', false)
   d.refresh([self({ mac: '00:00:00:00:0A:01', interface: 'bridge' }), self({ mac: '00:00:00:00:0A:02', interface: 'sfp1' }), self({ mac: '01:80:C2:00:00:00', interface: 'odd' }),
-    self({ ip: '192.0.2.2', interface: 'bridge' }), self({ ip: '198.51.100.1', interface: 'vlan100' }),
+    self({ ip: '192.0.2.2', interface: 'bridge' }), self({ ip: '198.51.100.1', interface: 'vlan100' }), self({ ip: '203.0.113.9', interface: 'ether1' }),
     fact({ source: 'bridge', router: 'sw', mac: '00:00:00:00:0A:02', interface: 'sfp1' }), fact({ source: 'arp', router: 'fw', mac: '00:00:00:00:0A:01', ip: '192.0.2.2' })], [{ ip: '198.51.100.1', last: '2026-01-02T00:00:00Z' }])
   const all = d.list()
   assert.deepEqual(all.map((x) => [x.router_self, x.mac, x.ip, x.shown]), [['sw', '00:00:00:00:0A:01', '192.0.2.2', 'Core']])
+  // The WAN address is not one of ours, so it is never kept for the router.
   assert.deepEqual(all[0]!.ips.map((i) => i.ip).sort(), ['192.0.2.2', '198.51.100.1'])
+  assert.equal(d.name('203.0.113.9'), '')
   assert.equal(d.name('198.51.100.1'), 'Core')
   assert.equal(d.events().length, 0)
   // Stored before the filter: cleared on start.
