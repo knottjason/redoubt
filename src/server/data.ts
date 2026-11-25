@@ -17,6 +17,12 @@ export type AlertRow = {
   direction: 'in' | 'out' | 'internal'; firstPair: string | null; isNew: boolean; blockable: boolean
 }
 
+/** The site name for a machine and a remote address, whichever of the two opened the connection. */
+export function siteNames(rows: { src: string; dst: string; name: string }[]) {
+  const m = new Map(rows.map((x) => [`${x.src}|${x.dst}`, x.name]))
+  return (machine: string, remote: string) => m.get(`${machine}|${remote}`) ?? m.get(`${remote}|${machine}`) ?? ''
+}
+
 export async function alerts(hours: number): Promise<AlertRow[]> {
   const rows = await q<{ sid: number; signature: string; category: string; severity: number; src: string; dst: string; hits: string; first: string; last: string }>(
     `SELECT sid, any(a.signature) AS signature, any(a.category) AS category, min(a.severity) AS severity, src, dst, count() AS hits,
@@ -26,12 +32,17 @@ export async function alerts(hours: number): Promise<AlertRow[]> {
   const pairs = await q<{ src: string; dst: string; f: string; recent: number }>(
     `SELECT src, dst, ${iso('min(first_seen)')} AS f, min(first_seen) > now() - INTERVAL 24 HOUR AS recent FROM pairs
      WHERE (src, dst) IN (SELECT src, dst FROM alerts WHERE ts > now() - toIntervalHour({hours:UInt32})) GROUP BY src, dst`, { hours })
+  // Sites by the name they were contacted with. A DNS name belongs to what was asked about, not to the resolver that answered.
+  const sites = siteNames(await q<{ src: string; dst: string; name: string }>(
+    `SELECT src, dst, topK(1)(n.name)[1] AS name FROM names n WHERE kind != 'dns' AND n.name != '' AND ts > now() - INTERVAL 7 DAY
+       AND (src, dst) IN (SELECT src, dst FROM alerts WHERE ts > now() - toIntervalHour({hours:UInt32}) UNION ALL SELECT dst, src FROM alerts WHERE ts > now() - toIntervalHour({hours:UInt32}))
+     GROUP BY src, dst`, { hours }))
   const seen = new Map(pairs.map((p) => [`${p.src}|${p.dst}`, p]))
   return rows.map((r) => {
     const o = orient(r.src, r.dst, config.internal)
     const p = seen.get(`${r.src}|${r.dst}`)
     return {
-      site: config.site, source: config.source, ...r, hits: Number(r.hits), ...o, machineName: hostName(o.machine), remoteName: hostName(o.remote),
+      site: config.site, source: config.source, ...r, hits: Number(r.hits), ...o, machineName: hostName(o.machine), remoteName: hostName(o.remote) || (isInternal(o.remote, config.internal) ? '' : sites(o.machine, o.remote)),
       firstPair: p?.f ?? null, isNew: Boolean(p?.recent), blockable: !isInternal(o.remote, config.internal),
     }
   })
@@ -53,7 +64,7 @@ export async function alertDetail(sid: number, src: string, dst: string) {
         (SELECT max(ts) FROM alerts WHERE sid = {sid:UInt32} AND src = {src:String} AND dst = {dst:String}) - INTERVAL 15 MINUTE AND
         (SELECT max(ts) FROM alerts WHERE sid = {sid:UInt32} AND src = {src:String} AND dst = {dst:String}) + INTERVAL 15 MINUTE
       ORDER BY bytes DESC LIMIT 12`, { m: machine, sid, src, dst }),
-    q<{ name: string }>(`SELECT name, count() AS c FROM names WHERE src = {m:String} AND dst = {r:String} AND ts > now() - INTERVAL 7 DAY
+    q<{ name: string }>(`SELECT name, count() AS c FROM names WHERE kind != 'dns' AND src = {m:String} AND dst = {r:String} AND ts > now() - INTERVAL 7 DAY
       GROUP BY name ORDER BY c DESC LIMIT 5`, { m: machine, r: remote }),
   ])
   const p = pair[0]
