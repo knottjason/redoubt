@@ -102,7 +102,7 @@ test('devices: raw facts per source, with hashes that ignore last seen', async (
 
 test('devices: a switch reports MACs per port and its neighbours; local and invalid rows are skipped', async () => {
   const f = fake()
-  f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:10', 'on-interface': 'ether20', vid: '1', local: 'false' })
+  f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:10', 'on-interface': 'ether20', vid: '1', local: 'false', external: 'true' })
   f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:11', 'on-interface': 'bridge', local: 'true' })
   f.put('interface/bridge/host', { 'mac-address': '00:00:5E:00:53:12', 'on-interface': 'ether3', invalid: 'true' })
   f.put('ip/neighbor', { 'mac-address': '00:00:5E:00:53:13', interface: 'ether17,bridge', identity: 'ap1', platform: 'MikroTik', board: 'cAP', address: '192.0.2.13' })

@@ -145,8 +145,9 @@ export async function look(router: string, r: Rest, now = Date.now(), trouble: s
   }
   for (const a of arps) if (a.disabled !== 'true' && mac(a['mac-address'])) out.push(make('arp', a['.id']!, { mac: mac(a['mac-address']), ip: a.address ?? null, interface: a.interface ?? null, comment: clean(a.comment), seen: a.status === 'reachable' ? new Date(now).toISOString() : null }))
   for (const d of dns) if (d.disabled !== 'true' && d.dynamic !== 'true' && (d.type ?? 'A') === 'A' && d.address && d.name) out.push(make('dns', d['.id']!, { ip: d.address, dns: [clean(d.name)!], comment: clean(d.comment) }))
+  // `external` means the switch chip learned it, which on a hardware switch is every device.
   for (const h of hosts) {
-    if (h.local === 'true' || h.invalid === 'true' || h.external === 'true' || h.disabled === 'true' || !mac(h['mac-address'])) continue
+    if (h.local === 'true' || h.invalid === 'true' || h.disabled === 'true' || !mac(h['mac-address'])) continue
     const vid = Number(h.vid)
     out.push(make('bridge', h['.id']!, { mac: mac(h['mac-address']), interface: h['on-interface'] ?? h.interface ?? null, vlan: Number.isInteger(vid) && vid > 0 ? vid : null, seen: new Date(now).toISOString() }))
   }
