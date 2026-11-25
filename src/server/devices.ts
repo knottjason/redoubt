@@ -78,6 +78,27 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     for (const d of byId.values()) if (d.ip && shown(d)) m.set(d.ip, shown(d))
     names = m
   }
+  /** Fold one device into another: its addresses, alerts and name move over, and the earliest first sighting stays. */
+  function merge(from: number, into: number) {
+    if (from === into) return
+    const a = db.prepare('SELECT name, want_dns, first_seen, last_seen FROM devices WHERE id = ?').get(from) as { name: string; want_dns: number; first_seen: string; last_seen: string } | undefined
+    if (!a) return
+    db.prepare(`INSERT INTO device_ips (device, ip, first, last) SELECT ?, ip, first, last FROM device_ips WHERE device = ?
+      ON CONFLICT (device, ip) DO UPDATE SET first = min(first, excluded.first), last = max(last, excluded.last)`).run(into, from)
+    db.prepare('DELETE FROM device_ips WHERE device = ?').run(from)
+    db.prepare('UPDATE device_events SET device = ? WHERE device = ?').run(into, from)
+    db.prepare(`UPDATE devices SET name = CASE WHEN name = '' THEN ? ELSE name END, want_dns = CASE WHEN name = '' AND ? != '' THEN ? ELSE want_dns END,
+      first_seen = min(first_seen, ?), last_seen = max(last_seen, ?) WHERE id = ?`).run(a.name, a.name, a.want_dns, a.first_seen, a.last_seen, into)
+    db.prepare('DELETE FROM devices WHERE id = ?').run(from)
+  }
+  // Devices left with no MAC and no address, from before addresses were merged: fold each into whoever holds its last address now.
+  {
+    const blanks = db.prepare('SELECT id FROM devices WHERE site = ? AND mac IS NULL AND ip IS NULL').all(site) as { id: number }[]
+    for (const { id } of blanks) {
+      const holder = db.prepare(`SELECT d.id FROM device_ips i JOIN devices d ON d.ip = i.ip AND d.site = ? AND d.id != ? WHERE i.device = ? ORDER BY i.last DESC LIMIT 1`).get(site, id, id) as { id: number } | undefined
+      if (holder) merge(id, holder.id)
+    }
+  }
   // Clear out addresses that were wrongly made devices: nothing a person or a router said about them is lost.
   {
     const junk = (db.prepare("SELECT id, ip FROM devices WHERE site = ? AND mac IS NULL AND name = '' AND router_name = ''").all(site) as { id: number; ip: string | null }[])
@@ -144,8 +165,11 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
     }
     const seenAt = (ip: string | null, id: number, when: string) => {
       if (!ip) return
-      // An address belongs to one device at a time.
-      db.prepare('UPDATE devices SET ip = NULL WHERE site = ? AND ip = ? AND id != ?').run(site, ip, id)
+      // An address belongs to one device at a time. A device known only by this address was this one all along.
+      for (const o of db.prepare('SELECT id, mac FROM devices WHERE site = ? AND ip = ? AND id != ?').all(site, ip, id) as { id: number; mac: string | null }[]) {
+        if (o.mac === null) merge(o.id, id)
+        else db.prepare('UPDATE devices SET ip = NULL WHERE id = ?').run(o.id)
+      }
       db.prepare('INSERT INTO device_ips (device, ip, first, last) VALUES (?, ?, ?, ?) ON CONFLICT (device, ip) DO UPDATE SET last = max(last, excluded.last)').run(id, ip, when, when)
     }
 
@@ -192,8 +216,8 @@ export function openDevices(db: DatabaseSync, site: string, internal: BlockList)
       // or a phone or laptop making up its MAC, which would cry wolf.
       if (!first) {
         for (const id of created) {
-          const d = db.prepare('SELECT ip, random_mac FROM devices WHERE id = ?').get(id) as { ip: string | null; random_mac: number }
-          if (d.ip && isIPv4(d.ip) && watched.check(d.ip, 'ipv4') && !d.random_mac) db.prepare("INSERT INTO device_events (device, kind, at) VALUES (?, 'new', ?)").run(id, at)
+          const d = db.prepare('SELECT ip, random_mac FROM devices WHERE id = ?').get(id) as { ip: string | null; random_mac: number } | undefined
+          if (d?.ip && isIPv4(d.ip) && watched.check(d.ip, 'ipv4') && !d.random_mac) db.prepare("INSERT INTO device_events (device, kind, at) VALUES (?, 'new', ?)").run(id, at)
         }
       }
       db.exec('COMMIT')

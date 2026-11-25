@@ -113,3 +113,24 @@ test('a device sits on its edge port, not on the uplink every switch learns it o
   assert.equal(d.ports().length, 3)
   assert.equal(d.list().find((v) => v.ip === '192.0.2.66')!.port, 'ether20')
 })
+
+test('a device first seen only on a switch port absorbs the address-only device once its lease shows up', () => {
+  const db = new DatabaseSync(':memory:')
+  const d = openDevices(db, 'a', own)
+  d.refresh([], [{ ip: '192.0.2.70', last: '2026-01-01T00:00:00Z' }])
+  d.rename({ ip: '192.0.2.70' }, 'Camera', true)
+  d.refresh([fact({ source: 'bridge', router: 'sw', mac: '00:00:00:00:00:70', interface: 'ether5' })])
+  assert.equal(d.list().length, 2)
+  d.refresh([lease('00:00:00:00:00:70', '192.0.2.70'), fact({ source: 'bridge', router: 'sw', mac: '00:00:00:00:00:70', interface: 'ether5' })])
+  const all = d.list()
+  assert.equal(all.length, 1)
+  assert.deepEqual([all[0]!.mac, all[0]!.ip, all[0]!.shown, all[0]!.port, all[0]!.want_dns, all[0]!.first_seen < '2026-01-02'], ['00:00:00:00:00:70', '192.0.2.70', 'Camera', 'ether5', true, false])
+  // A leftover from before the fix is folded in on start.
+  const at = '2025-06-01T00:00:00Z'
+  const ghost = Number(db.prepare("INSERT INTO devices (site, name, first_seen, last_seen) VALUES ('a', 'Old cam', ?, ?)").run(at, at).lastInsertRowid)
+  db.prepare('INSERT INTO device_ips (device, ip, first, last) VALUES (?, ?, ?, ?)').run(ghost, '192.0.2.70', at, at)
+  db.prepare("INSERT INTO devices (site, first_seen, last_seen) VALUES ('a', ?, ?)").run(at, at)
+  const again = openDevices(db, 'a', own).list()
+  assert.equal(again.length, 1)
+  assert.deepEqual([again[0]!.name, again[0]!.first_seen], ['Camera', at])
+})
